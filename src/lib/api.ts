@@ -52,8 +52,15 @@ async function call<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export type LoginResponse =
-  | { user: User; twoFactorRequired?: false }
-  | { twoFactorRequired: true; twoFactorIdentifier: string; username: string }
+  | { user: User; twoFactorRequired?: false; challengeRequired?: false }
+  | {
+      twoFactorRequired: true
+      twoFactorIdentifier: string
+      username: string
+      method?: string
+      hint?: string
+    }
+  | { challengeRequired: true; username: string; hint?: string }
 
 export const api = {
   login(username: string, password: string): Promise<LoginResponse> {
@@ -67,10 +74,18 @@ export const api = {
     username: string,
     code: string,
     twoFactorIdentifier: string,
+    method: string,
   ): Promise<LoginResponse> {
     return call<LoginResponse>('login', {
       method: 'POST',
-      body: JSON.stringify({ username, code, twoFactorIdentifier }),
+      body: JSON.stringify({ username, code, twoFactorIdentifier, method }),
+    })
+  },
+
+  loginChallenge(username: string, challengeCode: string): Promise<LoginResponse> {
+    return call<LoginResponse>('login', {
+      method: 'POST',
+      body: JSON.stringify({ username, challengeCode }),
     })
   },
 

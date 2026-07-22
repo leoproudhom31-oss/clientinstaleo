@@ -1,9 +1,17 @@
-import { Check, Lock, ShieldCheck, TriangleAlert, X } from 'lucide-react'
+import {
+  Check,
+  Lock,
+  MailCheck,
+  ShieldCheck,
+  ShieldQuestion,
+  TriangleAlert,
+  X,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useStore } from '../state/store'
 import { api, ApiError } from '../lib/api'
 
-type Step = 'credentials' | 'twofactor'
+type Step = 'credentials' | 'twofactor' | 'challenge'
 
 export function LoginModal() {
   const { loginOpen, setLoginOpen, onLoggedIn } = useStore()
@@ -12,6 +20,8 @@ export function LoginModal() {
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [twoFactorId, setTwoFactorId] = useState('')
+  const [method, setMethod] = useState('1')
+  const [hint, setHint] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,19 +45,29 @@ export function LoginModal() {
 
   if (!loginOpen) return null
 
+  function handleResponse(res: Awaited<ReturnType<typeof api.login>>) {
+    if ('twoFactorRequired' in res && res.twoFactorRequired) {
+      setTwoFactorId(res.twoFactorIdentifier)
+      setMethod(res.method ?? '1')
+      setHint(res.hint ?? '')
+      setCode('')
+      setStep('twofactor')
+    } else if ('challengeRequired' in res && res.challengeRequired) {
+      setHint(res.hint ?? '')
+      setCode('')
+      setStep('challenge')
+    } else if ('user' in res) {
+      onLoggedIn(res.user)
+    }
+  }
+
   async function submitCredentials(e: React.FormEvent) {
     e.preventDefault()
     if (!username.trim() || !password) return
     setLoading(true)
     setError(null)
     try {
-      const res = await api.login(username.trim(), password)
-      if ('twoFactorRequired' in res && res.twoFactorRequired) {
-        setTwoFactorId(res.twoFactorIdentifier)
-        setStep('twofactor')
-      } else if ('user' in res) {
-        onLoggedIn(res.user)
-      }
+      handleResponse(await api.login(username.trim(), password))
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -61,8 +81,23 @@ export function LoginModal() {
     setLoading(true)
     setError(null)
     try {
-      const res = await api.loginTwoFactor(username.trim(), code.trim(), twoFactorId)
-      if ('user' in res) onLoggedIn(res.user)
+      handleResponse(
+        await api.loginTwoFactor(username.trim(), code.trim(), twoFactorId, method),
+      )
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function submitChallenge(e: React.FormEvent) {
+    e.preventDefault()
+    if (!code.trim()) return
+    setLoading(true)
+    setError(null)
+    try {
+      handleResponse(await api.loginChallenge(username.trim(), code.trim()))
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -83,7 +118,7 @@ export function LoginModal() {
             <X size={22} />
           </button>
 
-          {step === 'credentials' ? (
+          {step === 'credentials' && (
             <>
               <h2 className="modal-title">Se connecter a Instagram</h2>
               <p className="modal-subtitle">
@@ -146,49 +181,56 @@ export function LoginModal() {
                 <div className="privacy-row">
                   <TriangleAlert className="pr-warn" size={16} />
                   Utilise l'API privee d'Instagram : contraire a ses CGU, a tes
-                  risques. Une double authentification peut etre demandee.
+                  risques. Une verification peut etre demandee.
                 </div>
               </div>
             </>
-          ) : (
+          )}
+
+          {step === 'twofactor' && (
             <>
+              <div style={{ textAlign: 'center', marginBottom: 8 }}>
+                <ShieldQuestion size={40} color="var(--brand)" />
+              </div>
               <h2 className="modal-title">Double authentification</h2>
               <p className="modal-subtitle">
-                Saisis le code recu par SMS ou via ton application
-                d'authentification.
+                {hint || 'Saisis le code de verification.'}
               </p>
-              <form onSubmit={submitTwoFactor}>
-                <label className="form-label">Code a 6 chiffres</label>
-                <input
-                  className="form-input"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  inputMode="numeric"
-                  autoFocus
-                  placeholder="123456"
-                />
-                {error && <div className="form-error">{error}</div>}
-                <div className="btn-row">
-                  <button
-                    className="btn btn-primary"
-                    type="submit"
-                    disabled={loading || !code.trim()}
-                  >
-                    {loading ? <span className="spinner" /> : <Check size={18} />}
-                    {loading ? 'Verification…' : 'Valider'}
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    type="button"
-                    onClick={() => {
-                      setStep('credentials')
-                      setError(null)
-                    }}
-                  >
-                    Retour
-                  </button>
-                </div>
-              </form>
+              <CodeForm
+                onSubmit={submitTwoFactor}
+                code={code}
+                setCode={setCode}
+                loading={loading}
+                error={error}
+                onBack={() => {
+                  setStep('credentials')
+                  setError(null)
+                }}
+              />
+            </>
+          )}
+
+          {step === 'challenge' && (
+            <>
+              <div style={{ textAlign: 'center', marginBottom: 8 }}>
+                <MailCheck size={40} color="var(--yellow)" />
+              </div>
+              <h2 className="modal-title">Verification de securite</h2>
+              <p className="modal-subtitle">
+                {hint ||
+                  'Instagram a detecte une connexion inhabituelle. Saisis le code envoye par e-mail ou SMS.'}
+              </p>
+              <CodeForm
+                onSubmit={submitChallenge}
+                code={code}
+                setCode={setCode}
+                loading={loading}
+                error={error}
+                onBack={() => {
+                  setStep('credentials')
+                  setError(null)
+                }}
+              />
             </>
           )}
         </div>
@@ -197,12 +239,53 @@ export function LoginModal() {
   )
 }
 
+function CodeForm({
+  onSubmit,
+  code,
+  setCode,
+  loading,
+  error,
+  onBack,
+}: {
+  onSubmit: (e: React.FormEvent) => void
+  code: string
+  setCode: (v: string) => void
+  loading: boolean
+  error: string | null
+  onBack: () => void
+}) {
+  return (
+    <form onSubmit={onSubmit}>
+      <label className="form-label">Code de verification</label>
+      <input
+        className="form-input"
+        value={code}
+        onChange={(e) => setCode(e.target.value)}
+        inputMode="numeric"
+        autoFocus
+        placeholder="123456"
+        style={{ letterSpacing: '0.3em', textAlign: 'center', fontSize: 20 }}
+      />
+      {error && <div className="form-error">{error}</div>}
+      <div className="btn-row">
+        <button className="btn btn-primary" type="submit" disabled={loading || !code.trim()}>
+          {loading ? <span className="spinner" /> : <Check size={18} />}
+          {loading ? 'Verification…' : 'Valider'}
+        </button>
+        <button className="btn btn-secondary" type="button" onClick={onBack}>
+          Retour
+        </button>
+      </div>
+    </form>
+  )
+}
+
 function errorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.code === 'live_disabled')
       return "La connexion reelle est desactivee sur ce deploiement (ENABLE_LIVE_LOGIN=false). Le mode demo reste disponible."
-    if (err.code === 'checkpoint')
-      return "Instagram demande une verification supplementaire (checkpoint). Ouvre l'app officielle pour valider la connexion, puis reessaie."
+    if (err.code === 'challenge_expired')
+      return 'La verification a expire. Recommence la connexion.'
     return err.message
   }
   return 'Une erreur inattendue est survenue.'

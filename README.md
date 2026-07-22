@@ -19,7 +19,13 @@ Déployable en un clic sur **Vercel** (Vite + React côté front, fonctions serv
 - **Mode démo** intégré : l'appli est utilisable immédiatement, sans identifiants et
   **sans aucune requête réseau** (avatars et images générés localement en SVG).
 - **Connexion réelle** (optionnelle) à ton compte via l'API privée d'Instagram,
-  exécutée **côté serveur**, avec prise en charge de la **double authentification (2FA)**.
+  exécutée **côté serveur**, avec un flux de connexion robuste :
+  - `preLoginFlow` (l'app imite un vrai appareil → moins de blocages) ;
+  - **double authentification** SMS **et** application d'authentification (TOTP) ;
+  - **résolution du challenge** « connexion inhabituelle » : quand Instagram
+    envoie un code par e-mail/SMS, l'app te le demande et le valide
+    (`challenge.auto` → `sendSecurityCode`). C'est ce qui débloque la plupart
+    des connexions depuis un serveur.
 
 ## 🔒 Le modèle de confidentialité (honnête)
 
@@ -44,9 +50,12 @@ Déployable en un clic sur **Vercel** (Vite + React côté front, fonctions serv
 
 Projet **éducatif / personnel**, **non affilié** à Instagram ni à Meta.
 Les connexions depuis une IP de datacenter (comme Vercel) déclenchent souvent une
-vérification « connexion suspecte » (checkpoint) ou une demande de 2FA. C'est normal
-et géré du mieux possible, mais cela peut rendre la connexion réelle capricieuse.
-En cas de doute, **reste en mode démo**.
+vérification « connexion inhabituelle » (checkpoint) ou une demande de 2FA.
+L'app **gère ces étapes** : elle te demande le code reçu par e-mail/SMS (ou via ton
+appli d'authentification) et le valide. Aucun client tiers ne peut toutefois
+**garantir** un taux de réussite de 100 % : Instagram lutte activement contre
+l'automatisation et peut, dans certains cas, exiger une validation manuelle depuis
+l'app officielle. En cas de blocage, **le mode démo reste pleinement utilisable**.
 
 ---
 
