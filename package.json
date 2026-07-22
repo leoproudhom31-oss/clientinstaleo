@@ -2,12 +2,32 @@
   "name": "clientinstaleo",
   "private": true,
   "version": "1.0.0",
-  "description": "Client Instagram alternatif, sans trackers, avec une interface facon Discord. Deployable sur Vercel (Vite + React).",
+  "description": "Client Instagram alternatif, sans trackers, avec une interface facon Discord. Fonctionne en client local (ton IP) ou en demo sur Vercel.",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "serve": "node server.cjs",
+    "start": "npm run build && node server.cjs",
+    "desktop": "electron electron/main.cjs",
+    "desktop:build": "npm run build && electron-builder",
     "typecheck": "tsc --noEmit"
+  },
+  "build": {
+    "appId": "com.instaleo.app",
+    "productName": "InstaLeo",
+    "files": [
+      "dist/**",
+      "api/**",
+      "server/**",
+      "server.cjs",
+      "electron/**",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    }
   },
   "dependencies": {
     "instagram-private-api": "^1.46.1",

@@ -1,139 +1,108 @@
 # InstaLeo 🛡️
 
 Un **client Instagram alternatif**, sans trackers, avec une **interface façon Discord**.
-Déployable en un clic sur **Vercel** (Vite + React côté front, fonctions serverless côté back).
 
 > Tu mets tes identifiants, tu consultes ton fil et tes messages privés dans une
 > interface sombre inspirée de Discord — **sans charger le moindre script de
-> tracking Instagram/Meta** dans ton navigateur.
+> tracking Instagram/Meta**.
+
+## 🔑 Le point le plus important à comprendre
+
+Instagram **bloque les connexions venant des serveurs / datacenters** (Vercel,
+AWS…) et renvoie de faux « mot de passe incorrect ». Et un navigateur seul ne
+peut pas parler à l'API d'Instagram (bloqué par CORS).
+
+**La solution : faire tourner InstaLeo en client *local*, sur ta machine.** Les
+requêtes partent alors de **ton adresse IP résidentielle** — exactement comme
+l'app officielle — et la connexion fonctionne.
+
+| Mode | Commande | Connexion réelle ? | Pourquoi |
+| --- | --- | --- | --- |
+| **Dev local** (recommandé) | `npm run dev` | ✅ oui (ton IP) | le back tourne chez toi |
+| **Serveur local** | `npm start` | ✅ oui (ton IP) | idem, version compilée |
+| **App de bureau** (Electron) | `npm run desktop` | ✅ oui (ton IP) | fenêtre + serveur embarqué |
+| **Vercel** | déploiement | ⚠️ démo seulement | IP datacenter bloquée par Instagram |
+
+> Autrement dit : **Vercel = vitrine/démo**, **local = client qui marche vraiment**.
 
 ---
 
-## ✨ Ce que ça fait
+## 🚀 Utilisation
 
-- **Interface façon Discord** : rail des « serveurs », liste de canaux, salon de
-  discussion, liste des membres, panneau utilisateur en bas à gauche, thème sombre.
-- **Fil d'actualité** rendu comme un salon : chaque publication devient un « message ».
-- **Messages privés (Direct)** : conversations affichées comme des salons Discord,
-  avec regroupement des messages, envoi de texte, etc.
-- **Mode démo** intégré : l'appli est utilisable immédiatement, sans identifiants et
-  **sans aucune requête réseau** (avatars et images générés localement en SVG).
-- **Connexion réelle** (optionnelle) à ton compte via l'API privée d'Instagram,
-  exécutée **côté serveur**, avec un flux de connexion robuste :
-  - `preLoginFlow` (l'app imite un vrai appareil → moins de blocages) ;
-  - **double authentification** SMS **et** application d'authentification (TOTP) ;
-  - **résolution du challenge** « connexion inhabituelle » : quand Instagram
-    envoie un code par e-mail/SMS, l'app te le demande et le valide
-    (`challenge.auto` → `sendSecurityCode`). C'est ce qui débloque la plupart
-    des connexions depuis un serveur.
-
-## 🔒 Le modèle de confidentialité (honnête)
-
-**Ce qui est bloqué (côté navigateur) :**
-
-- ✅ Aucun script Instagram/Meta, aucun pixel de suivi, aucun analytics.
-- ✅ Aucun cookie tiers / publicitaire.
-- ✅ Les images passent par un **proxy** (`/api/img`) : ton navigateur ne contacte
-  **jamais** directement les serveurs de Meta (ni cookie, ni referer, ni fuite d'IP).
-- ✅ En mode démo, **zéro requête externe** : tout est généré en local.
-
-**Ce qui reste vrai (et qu'aucun client ne peut éviter) :**
-
-- ⚠️ Quand tu te connectes, c'est **ton compte** qui s'authentifie : Instagram voit
-  donc ton activité **côté serveur**. Un client alternatif supprime le pistage
-  *navigateur*, pas la connaissance qu'a Instagram de ce que fait ton compte.
-- ⚠️ Utiliser l'API privée est **contraire aux CGU d'Instagram**. C'est à tes
-  risques (défis de sécurité, blocages temporaires, voire bannissement possible).
-  À réserver à un usage **personnel**.
-
-## ⚠️ Avertissement
-
-Projet **éducatif / personnel**, **non affilié** à Instagram ni à Meta.
-Les connexions depuis une IP de datacenter (comme Vercel) déclenchent souvent une
-vérification « connexion inhabituelle » (checkpoint) ou une demande de 2FA.
-L'app **gère ces étapes** : elle te demande le code reçu par e-mail/SMS (ou via ton
-appli d'authentification) et le valide. Aucun client tiers ne peut toutefois
-**garantir** un taux de réussite de 100 % : Instagram lutte activement contre
-l'automatisation et peut, dans certains cas, exiger une validation manuelle depuis
-l'app officielle. En cas de blocage, **le mode démo reste pleinement utilisable**.
-
----
-
-## 🚀 Démarrage rapide
-
-### 1. Voir l'interface en local (mode démo)
+### Option 1 — le plus simple (recommandé)
 
 ```bash
 npm install
 npm run dev
 ```
 
-Ouvre http://localhost:5173. L'appli démarre en **mode démo** : tu peux explorer
-toute l'interface sans identifiants. (Les routes `/api/*` ne tournent pas avec
-`vite dev` — voir ci-dessous pour les tester.)
+Ça ouvre http://localhost:5173. Clique sur l'icône de connexion (en bas à
+gauche), entre tes identifiants → **la connexion passe par ton IP**, donc elle
+aboutit. La première fois, Instagram enverra sûrement un **code de vérification**
+par e-mail/SMS : l'app te le demande, tu le saisis, et c'est bon.
 
-### 2. Tester la connexion réelle en local
-
-Les fonctions serverless nécessitent le CLI Vercel :
+### Option 2 — app de bureau (double-clic, sans terminal au quotidien)
 
 ```bash
-npm i -g vercel
-vercel dev
+npm install
+npm i -D electron            # une fois (télécharge Electron)
+npm run build
+npm run desktop             # ouvre l'app InstaLeo
 ```
 
-Crée un fichier `.env` (voir `.env.example`) avec au minimum :
+Pour générer un exécutable installable (.exe / .dmg / .AppImage) :
 
+```bash
+npm i -D electron electron-builder
+npm run desktop:build       # résultat dans release/
 ```
-SESSION_SECRET=une-chaine-aleatoire-longue   # openssl rand -hex 32
+
+### Option 3 — serveur local compilé
+
+```bash
+npm start                   # build + serveur -> http://localhost:4321
 ```
 
-### 3. Déployer sur Vercel
+### Option 4 — démo publique sur Vercel
 
-1. Pousse ce dépôt sur GitHub.
-2. Sur [vercel.com](https://vercel.com), **New Project** → importe le dépôt.
-   Le framework **Vite** est détecté automatiquement.
-3. Dans **Settings → Environment Variables**, ajoute :
-   - `SESSION_SECRET` — une longue valeur aléatoire (obligatoire pour chiffrer la session).
-   - `ENABLE_LIVE_LOGIN` — `true` (défaut) ou `false` pour forcer le mode démo.
-4. **Deploy**. C'est en ligne. 🎉
-
-> La page est marquée `noindex` et n'expose aucune donnée : c'est **ton** déploiement,
-> pour **ton** usage.
+Le déploiement Vercel sert **l'interface en mode démo** (données fictives, zéro
+requête réseau). La connexion réelle n'y fonctionne pas (IP datacenter). Pour la
+déployer quand même : importe le repo sur Vercel (preset **Vite** auto-détecté).
 
 ---
 
-## 🧩 La connexion réelle échoue ? (dépannage)
+## ✅ Si la connexion échoue quand même
 
-C'est **attendu** depuis Vercel, et voici pourquoi + comment y remédier.
+1. **Utilise ton `@pseudo`, pas ton e-mail.** L'API privée rejette souvent l'e-mail.
+2. **Tu es bien en local** (`npm run dev` / `npm start` / `npm run desktop`), pas
+   sur l'URL Vercel ?
+3. **Réseau très surveillé** (Wi-Fi public, VPN, certaines box) ? Essaie un autre
+   réseau, ou configure un proxy via la variable `IG_PROXY` (voir `.env.example`).
+4. **Checkpoint** : si Instagram demande une validation, ouvre l'app officielle,
+   confirme « C'était moi », puis réessaie.
 
-| Symptôme (code) | Cause | Solution |
-| --- | --- | --- |
-| « mot de passe incorrect » (`bad_credentials`) alors que le mot de passe est bon | Instagram **bloque les IP de datacenter** (Vercel tourne sur AWS) et renvoie un faux refus | Configurer un **proxy résidentiel/mobile** via `IG_PROXY` (voir ci-dessous) |
-| « identifiant introuvable » (`invalid_user`) | Tu t'es connecté avec ton **e-mail** | Utilise ton **@pseudo**, pas l'adresse e-mail |
-| « vérification de sécurité » (`checkpoint`) | Connexion inhabituelle détectée | Saisis le **code reçu par e-mail/SMS** dans l'app (déjà géré) |
+---
 
-### La vraie solution : un proxy résidentiel (`IG_PROXY`)
+## 🔒 Confidentialité
 
-L'API privée fonctionne de façon fiable depuis une **IP résidentielle ou mobile**,
-pas depuis un datacenter. Procure-toi un proxy résidentiel (services payants type
-IPRoyal, Bright Data, Smartproxy… ou un proxy mobile) puis, dans **Vercel →
-Settings → Environment Variables** :
+**Bloqué (côté navigateur) :**
+- ✅ Aucun script Instagram/Meta, aucun pixel, aucun analytics, aucun cookie tiers.
+- ✅ Une **Content-Security-Policy stricte** interdit tout script/connexion/image
+  externe → le « 0 tracker » est imposé par le navigateur, pas juste promis.
+- ✅ Les images passent par un **proxy local** (`/api/img`) : rien n'est chargé
+  directement depuis les serveurs de Meta par la page.
+- ✅ En mode démo, images et avatars générés en local (SVG) : zéro requête externe.
 
-```
-IG_PROXY=http://utilisateur:motdepasse@hote:port
-```
+**Ce qui reste vrai :** quand tu te connectes, c'est **ton compte** qui
+s'authentifie ; Instagram voit donc ton activité côté serveur. Aucun client ne
+peut l'éviter — ce qu'on supprime, c'est le **pistage navigateur**.
 
-Tout le trafic Instagram (connexion, fil, DM, images) passe alors par ce proxy.
+## ⚠️ Avertissement
 
-> **Alternative sans proxy :** héberge le back sur une machine à IP résidentielle
-> (ton PC, un Raspberry Pi, un petit VPS chez toi) plutôt que sur Vercel. L'API
-> privée y passe beaucoup mieux.
-
-### Astuce sécurité
-
-Si tu partages un fichier **HAR** pour déboguer, sache qu'il contient ton
-**mot de passe en clair** (corps de la requête `/api/login`). Anonymise-le ou
-change ton mot de passe après coup.
+Projet **éducatif / personnel**, **non affilié** à Instagram ni à Meta. Utiliser
+l'API privée est contraire aux CGU d'Instagram (usage perso, à tes risques). Si tu
+partages un fichier **HAR** pour déboguer, il contient ton **mot de passe en
+clair** : anonymise-le ou change ton mot de passe ensuite.
 
 ---
 
@@ -141,41 +110,29 @@ change ton mot de passe après coup.
 
 ```
 .
-├── api/                    Fonctions serverless Vercel (Node)
-│   ├── _lib/
-│   │   ├── session.js      Chiffrement AES-256-GCM + cookies httpOnly (chunkés)
-│   │   ├── ig.js           Client instagram-private-api + mapping des données
-│   │   └── http.js         Utilitaires (lecture JSON, réponses)
-│   ├── login.js            Connexion (+ 2FA)
-│   ├── logout.js           Déconnexion
-│   ├── me.js               Session courante
-│   ├── feed.js             Fil d'actualité
-│   ├── inbox.js            Liste des conversations
-│   ├── thread.js           Messages d'une conversation
-│   ├── send.js             Envoi d'un message
-│   └── img.js              Proxy d'images (liste blanche de domaines)
-├── src/                    Front Vite + React + TypeScript
-│   ├── components/         UI façon Discord (rail, sidebar, messages, modales…)
-│   ├── lib/                API client, données démo, avatars SVG, formatage
-│   ├── state/store.tsx     État global (mode démo/live, espace actif, données)
-│   └── index.css           Thème sombre inspiré de Discord
-└── vercel.json             Config Vercel (framework Vite, headers de sécurité)
+├── api/                    Handlers (login 2FA/challenge, feed, inbox, thread, send, img)
+│   └── _lib/               instagram-private-api + mapping + session chiffrée
+├── server/adapter.cjs      Fait tourner les handlers /api dans un serveur Node local
+├── server.cjs              Serveur local autonome (dist/ + /api) — `npm start`
+├── electron/main.cjs       App de bureau : embarque le serveur, ouvre une fenêtre
+├── vite.config.ts          Sert aussi /api en `npm run dev` (donc live, via ton IP)
+├── src/                    Front Vite + React + TS (UI façon Discord)
+└── vercel.json             Déploiement démo + en-têtes de sécurité (CSP…)
 ```
 
-**Comment la session tient dans un environnement stateless ?**
-Après connexion, l'état de `instagram-private-api` est sérialisé, **compressé**,
-**chiffré** (AES-256-GCM avec `SESSION_SECRET`), puis découpé en cookies `httpOnly`.
-Chaque appel API restaure ce client à partir des cookies, exécute la requête, puis
-rafraîchit la session. Aucun mot de passe n'est stocké.
+**Le même code `/api` tourne partout** — en dev Vite, dans le serveur local,
+dans l'app Electron et (en démo) sur Vercel. La seule différence : en local, la
+machine qui appelle Instagram, **c'est la tienne**.
+
+Après connexion, l'état de `instagram-private-api` est sérialisé, compressé,
+chiffré (AES-256-GCM) et stocké dans un cookie `httpOnly`. Aucun mot de passe
+n'est conservé.
 
 ## 🛠️ Stack
 
-- [Vite](https://vitejs.dev/) + [React](https://react.dev/) + TypeScript
-- [lucide-react](https://lucide.dev/) pour les icônes
-- [instagram-private-api](https://github.com/dilame/instagram-private-api) (côté serveur)
-- Fonctions serverless Vercel (Node) — chiffrement via `crypto`/`zlib` natifs
+Vite · React · TypeScript · lucide-react · instagram-private-api · Electron (option)
 
-## 📄 Licence & responsabilité
+## 📄 Licence
 
-Usage personnel et éducatif. Tu es responsable du respect des conditions
-d'utilisation d'Instagram et des lois applicables. Aucune garantie.
+Usage personnel et éducatif. Aucune garantie. Tu es responsable du respect des
+conditions d'utilisation d'Instagram et des lois applicables.

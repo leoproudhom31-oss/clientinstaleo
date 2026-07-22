@@ -71,9 +71,11 @@ function readBlob(req, prefix) {
 }
 
 function cookieAttrs(maxAge) {
-  return ['Path=/', 'HttpOnly', 'SameSite=Lax', 'Secure', `Max-Age=${maxAge}`].join(
-    '; ',
-  )
+  const attrs = ['Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${maxAge}`]
+  // En local (http://localhost), l'attribut Secure empecherait le cookie.
+  // Le serveur local definit COOKIE_INSECURE=1 ; sur Vercel (https) il reste absent.
+  if (process.env.COOKIE_INSECURE !== '1') attrs.push('Secure')
+  return attrs.join('; ')
 }
 
 function appendSetCookie(res, cookies) {
