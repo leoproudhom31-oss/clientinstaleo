@@ -1,13 +1,16 @@
-// Application de bureau InstaLeo (optionnelle).
+// Application de bureau InstaLeo.
 // Elle embarque le serveur local et ouvre une fenetre dessus : les requetes
 // Instagram partent de TON IP. Aucune IPC n'est necessaire — l'interface parle
-// au serveur local en same-origin, exactement comme la version web.
+// au serveur local en same-origin.
 //
-// Lancer :   npm i -D electron   puis   npx electron electron/main.cjs
-// Empaqueter : npm i -D electron electron-builder   puis   npm run desktop:build
+//   npm install
+//   npm start            (lance l'app)
+//   npm run dist         (genere un installeur, requiert electron-builder)
 
 const { app, BrowserWindow, shell } = require('electron')
 const path = require('path')
+
+require(path.join(__dirname, '..', 'server', 'env.cjs')).loadEnv()
 
 // Cookies de session en http local.
 process.env.COOKIE_INSECURE = '1'

@@ -9,6 +9,7 @@
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
+require('./server/env.cjs').loadEnv()
 const { handleApi } = require('./server/adapter.cjs')
 
 // Les cookies doivent fonctionner en http sur localhost.

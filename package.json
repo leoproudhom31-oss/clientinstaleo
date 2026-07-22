@@ -5,13 +5,11 @@
   "description": "Client Instagram alternatif, sans trackers, avec une interface facon Discord. Fonctionne en client local (ton IP) ou en demo sur Vercel.",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
-    "serve": "node server.cjs",
-    "start": "npm run build && node server.cjs",
+    "start": "electron electron/main.cjs",
     "desktop": "electron electron/main.cjs",
-    "desktop:build": "npm run build && electron-builder",
+    "build": "tsc --noEmit && vite build",
+    "dist": "npm run build && electron-builder",
+    "dev": "vite",
     "typecheck": "tsc --noEmit"
   },
   "build": {
@@ -39,6 +37,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^31.7.7",
     "typescript": "^5.5.4",
     "vite": "^5.4.2"
   }
