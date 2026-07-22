@@ -89,12 +89,20 @@ module.exports = async (req, res) => {
       return startChallenge(res, ig, username)
     }
 
-    if (
-      e?.name === 'IgLoginBadPasswordError' ||
-      e?.name === 'IgLoginInvalidUserError'
-    ) {
+    if (e?.name === 'IgLoginInvalidUserError') {
       return json(res, 401, {
-        error: 'Nom d’utilisateur ou mot de passe incorrect.',
+        error:
+          'Cet identifiant est introuvable. Utilise ton nom d’utilisateur (@pseudo) plutot que ton adresse e-mail.',
+        code: 'invalid_user',
+      })
+    }
+
+    if (e?.name === 'IgLoginBadPasswordError') {
+      const proxied = Boolean(process.env.IG_PROXY)
+      return json(res, 401, {
+        error: proxied
+          ? 'Mot de passe refuse par Instagram. Verifie le mot de passe, et essaie ton @pseudo plutot que ton e-mail.'
+          : 'Connexion refusee par Instagram. Souvent, depuis un serveur (Vercel), Instagram bloque les IP de datacenter et renvoie un faux « mot de passe incorrect » — meme si tes identifiants sont bons. Essaie ton @pseudo (pas l’e-mail), et configure un proxy residentiel (variable IG_PROXY).',
         code: 'bad_credentials',
       })
     }

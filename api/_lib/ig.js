@@ -7,8 +7,18 @@ const { IgApiClient } = require('instagram-private-api')
 const { readSession, writeSession } = require('./session')
 const { json } = require('./http')
 
+// Optionnel : route TOUT le trafic Instagram via un proxy (idealement
+// residentiel/mobile). C'est LA solution quand Instagram bloque les IP de
+// datacenter (Vercel/AWS) et renvoie de faux "mot de passe incorrect".
+function applyProxy(ig) {
+  const proxy = process.env.IG_PROXY
+  if (proxy) ig.state.proxyUrl = proxy
+  return ig
+}
+
 function newClient(seedUsername) {
   const ig = new IgApiClient()
+  applyProxy(ig)
   if (seedUsername) ig.state.generateDevice(seedUsername)
   return ig
 }
@@ -18,6 +28,7 @@ async function clientFromSession(req) {
   if (!state) return null
   const ig = new IgApiClient()
   await ig.state.deserialize(state)
+  applyProxy(ig)
   return ig
 }
 

@@ -102,6 +102,41 @@ SESSION_SECRET=une-chaine-aleatoire-longue   # openssl rand -hex 32
 
 ---
 
+## 🧩 La connexion réelle échoue ? (dépannage)
+
+C'est **attendu** depuis Vercel, et voici pourquoi + comment y remédier.
+
+| Symptôme (code) | Cause | Solution |
+| --- | --- | --- |
+| « mot de passe incorrect » (`bad_credentials`) alors que le mot de passe est bon | Instagram **bloque les IP de datacenter** (Vercel tourne sur AWS) et renvoie un faux refus | Configurer un **proxy résidentiel/mobile** via `IG_PROXY` (voir ci-dessous) |
+| « identifiant introuvable » (`invalid_user`) | Tu t'es connecté avec ton **e-mail** | Utilise ton **@pseudo**, pas l'adresse e-mail |
+| « vérification de sécurité » (`checkpoint`) | Connexion inhabituelle détectée | Saisis le **code reçu par e-mail/SMS** dans l'app (déjà géré) |
+
+### La vraie solution : un proxy résidentiel (`IG_PROXY`)
+
+L'API privée fonctionne de façon fiable depuis une **IP résidentielle ou mobile**,
+pas depuis un datacenter. Procure-toi un proxy résidentiel (services payants type
+IPRoyal, Bright Data, Smartproxy… ou un proxy mobile) puis, dans **Vercel →
+Settings → Environment Variables** :
+
+```
+IG_PROXY=http://utilisateur:motdepasse@hote:port
+```
+
+Tout le trafic Instagram (connexion, fil, DM, images) passe alors par ce proxy.
+
+> **Alternative sans proxy :** héberge le back sur une machine à IP résidentielle
+> (ton PC, un Raspberry Pi, un petit VPS chez toi) plutôt que sur Vercel. L'API
+> privée y passe beaucoup mieux.
+
+### Astuce sécurité
+
+Si tu partages un fichier **HAR** pour déboguer, sache qu'il contient ton
+**mot de passe en clair** (corps de la requête `/api/login`). Anonymise-le ou
+change ton mot de passe après coup.
+
+---
+
 ## 🧱 Architecture
 
 ```
