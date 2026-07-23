@@ -30,17 +30,31 @@ export interface ThreadPreview {
   isGroup: boolean
 }
 
+export type MessageItemType =
+  | 'text'
+  | 'like'
+  | 'media'
+  | 'share'
+  | 'call'
+  | 'system'
+  | 'unsupported'
+
 export interface Message {
   id: string
   senderId: string
   text: string | null
   timestamp: number // timestamp en secondes
-  itemType: 'text' | 'media' | 'like' | 'placeholder'
+  itemType: MessageItemType
   mediaUrl?: string | null
+  /** Message optimiste dont l'envoi reel a echoue. */
+  failed?: boolean
 }
 
 export interface Thread extends ThreadPreview {
   messages: Message[]
+  /** Pagination : d'autres messages plus anciens sont disponibles. */
+  hasOlder?: boolean
+  oldestCursor?: string | null
 }
 
 // Sessions "serveur" facon Discord dans le rail de gauche.

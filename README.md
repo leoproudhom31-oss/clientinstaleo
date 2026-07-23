@@ -64,6 +64,10 @@ npm run dist                  # résultat dans release/
    reconnecte-toi.
 4. Voie identifiants seulement : ton **nom d'utilisateur** (sans « @ », pas
    l'e-mail), et un **mot de passe à jour** si tu l'as changé récemment.
+5. Erreur **« useragent mismatch »** dans le terminal, ou profil/publications
+   qui ne chargent pas alors que tu es connecté·e : ta session a été capturée
+   par une version antérieure de l'app. **Déconnecte-toi puis reconnecte-toi**
+   une fois — la session recapturée résout le problème définitivement.
 
 ---
 

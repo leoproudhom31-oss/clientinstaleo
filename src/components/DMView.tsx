@@ -1,4 +1,12 @@
-import { AtSign, Heart } from 'lucide-react'
+import {
+  AtSign,
+  Heart,
+  Image as ImageIcon,
+  Info,
+  Phone,
+  Share2,
+  TriangleAlert,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useStore } from '../state/store'
 import { MessageComposer } from './MessageComposer'
@@ -11,6 +19,13 @@ import {
 } from '../lib/format'
 import type { Message, User } from '../types'
 
+const META_ICON: Record<string, typeof ImageIcon> = {
+  media: ImageIcon,
+  share: Share2,
+  call: Phone,
+  unsupported: Info,
+}
+
 function MessageRow({
   message,
   sender,
@@ -20,7 +35,12 @@ function MessageRow({
   sender: User
   grouped: boolean
 }) {
-  const isLike = message.itemType === 'like'
+  if (message.itemType === 'system') {
+    return <div className="msg-system">{message.text}</div>
+  }
+
+  const Icon = META_ICON[message.itemType]
+
   return (
     <div className={`msg ${grouped ? 'grouped' : 'first'}`}>
       <div className="msg-gutter">
@@ -39,13 +59,30 @@ function MessageRow({
             <span className="msg-time">{formatMessageTime(message.timestamp)}</span>
           </div>
         )}
-        {isLike ? (
+
+        {message.itemType === 'like' && (
           <div className="msg-like">
             <Heart size={18} color="var(--red)" fill="var(--red)" /> a aime un
             message
           </div>
-        ) : (
-          message.text && <div className="msg-text">{message.text}</div>
+        )}
+
+        {message.itemType === 'text' && message.text && (
+          <div className="msg-text">{message.text}</div>
+        )}
+
+        {Icon && (
+          <div className={`msg-meta ${message.itemType}`}>
+            <Icon size={15} />
+            <span>{message.text}</span>
+          </div>
+        )}
+
+        {message.failed && (
+          <div className="msg-failed">
+            <TriangleAlert size={13} /> Non envoye (Instagram a refuse le
+            message)
+          </div>
         )}
       </div>
     </div>
@@ -53,8 +90,16 @@ function MessageRow({
 }
 
 export function DMView() {
-  const { activeThread, threadLoading, me } = useStore()
+  const { activeThread, threadLoading, olderLoading, loadOlderMessages, me } =
+    useStore()
   const scrollRef = useRef<HTMLDivElement>(null)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  // Distingue "nouveau message ajoute a la fin" (-> defiler vers le bas) de
+  // "historique charge en haut" (-> garder la position de lecture actuelle).
+  const prevFirstId = useRef<string | null>(null)
+  const prevLastId = useRef<string | null>(null)
+  const anchor = useRef<{ scrollHeight: number; scrollTop: number } | null>(null)
 
   const userMap = useMemo(() => {
     const map = new Map<string, User>()
@@ -63,10 +108,57 @@ export function DMView() {
     return map
   }, [activeThread, me])
 
+  // Repere en haut de la liste : charge l'historique quand il devient visible.
+  useEffect(() => {
+    const el = sentinelRef.current
+    const container = scrollRef.current
+    if (!el || !container || !activeThread?.hasOlder) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !olderLoading) {
+          anchor.current = {
+            scrollHeight: container.scrollHeight,
+            scrollTop: container.scrollTop,
+          }
+          loadOlderMessages()
+        }
+      },
+      { root: container, rootMargin: '200px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [activeThread?.hasOlder, activeThread?.id, olderLoading, loadOlderMessages])
+
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [activeThread?.messages.length, activeThread?.id])
+    const msgs = activeThread?.messages
+    if (!el || !msgs || msgs.length === 0) return
+
+    const firstId = msgs[0].id
+    const lastId = msgs[msgs.length - 1].id
+    const isInitial = prevFirstId.current === null
+    const prepended = !isInitial && firstId !== prevFirstId.current
+    const appended = !isInitial && lastId !== prevLastId.current
+
+    if (prepended && anchor.current) {
+      // Historique charge en haut : on garde le meme point de lecture.
+      const { scrollHeight, scrollTop } = anchor.current
+      el.scrollTop = el.scrollHeight - scrollHeight + scrollTop
+      anchor.current = null
+    } else if (isInitial || appended) {
+      el.scrollTop = el.scrollHeight
+    }
+
+    prevFirstId.current = firstId
+    prevLastId.current = lastId
+  }, [activeThread?.messages, activeThread?.id])
+
+  // Nouvelle conversation ouverte : on repart de zero pour la logique de scroll.
+  useEffect(() => {
+    prevFirstId.current = null
+    prevLastId.current = null
+    anchor.current = null
+  }, [activeThread?.id])
 
   if (!activeThread && !threadLoading) {
     return (
@@ -99,26 +191,34 @@ export function DMView() {
 
           {!threadLoading && activeThread && (
             <>
-              <div style={{ padding: '32px 16px 8px' }}>
-                <Avatar
-                  user={activeThread.users[0]}
-                  seed={activeThread.id}
-                  label={activeThread.title}
-                  size={72}
-                />
-                <h1
-                  style={{
-                    color: 'var(--header-primary)',
-                    margin: '12px 0 6px',
-                    fontSize: 28,
-                  }}
-                >
-                  {activeThread.title}
-                </h1>
-                <p style={{ color: 'var(--text-muted)', margin: 0 }}>
-                  Debut de ta conversation avec <strong>{activeThread.title}</strong>.
-                </p>
-              </div>
+              {activeThread.hasOlder ? (
+                <div ref={sentinelRef} className="load-older">
+                  <span className="spinner" /> Chargement des messages
+                  precedents…
+                </div>
+              ) : (
+                <div style={{ padding: '32px 16px 8px' }}>
+                  <Avatar
+                    user={activeThread.users[0]}
+                    seed={activeThread.id}
+                    label={activeThread.title}
+                    size={72}
+                  />
+                  <h1
+                    style={{
+                      color: 'var(--header-primary)',
+                      margin: '12px 0 6px',
+                      fontSize: 28,
+                    }}
+                  >
+                    {activeThread.title}
+                  </h1>
+                  <p style={{ color: 'var(--text-muted)', margin: 0 }}>
+                    Debut de ta conversation avec{' '}
+                    <strong>{activeThread.title}</strong>.
+                  </p>
+                </div>
+              )}
 
               {activeThread.messages.map((m, i) => {
                 const prev = activeThread.messages[i - 1]

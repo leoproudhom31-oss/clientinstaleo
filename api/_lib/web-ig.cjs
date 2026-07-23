@@ -4,11 +4,18 @@
 // Pourquoi cette voie ? La connexion par mot de passe (instagram-private-api)
 // est souvent bloquee par l'anti-bot. Ici, la connexion a eu lieu dans une
 // VRAIE page Instagram : aucun robot detecte. On reutilise juste la session.
+//
+// IMPORTANT : Instagram lie la session au User-Agent utilise a la connexion et
+// renvoie 400 "useragent mismatch" si un autre UA est utilise ensuite. On
+// reutilise donc TOUJOURS le UA capture (session.userAgent) plutot qu'un UA
+// invente.
 
 const map = require('./map.cjs')
 
 const APP_ID = '936619743392459'
-const UA =
+// Repli seulement pour d'anciennes sessions capturees avant l'ajout de cette
+// capture d'UA (elles echoueront probablement quand meme : reconnecte-toi).
+const FALLBACK_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
 const BASE = 'https://www.instagram.com'
@@ -24,7 +31,7 @@ function uuid() {
 async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${BASE}${pathOrUrl}`
   const headers = {
-    'User-Agent': UA,
+    'User-Agent': session.userAgent || FALLBACK_UA,
     'X-IG-App-ID': APP_ID,
     'X-CSRFToken': session.csrftoken || '',
     'X-Requested-With': 'XMLHttpRequest',
@@ -66,6 +73,13 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
     e.code = 'checkpoint'
     throw e
   }
+  if (data?.message === 'useragent mismatch') {
+    const e = new Error(
+      'Instagram a refuse la requete (useragent mismatch). Deconnecte-toi puis reconnecte-toi pour recapturer une session a jour.',
+    )
+    e.code = 'ua_mismatch'
+    throw e
+  }
   if (!res.ok || !data) {
     const e = new Error(data?.message || `Erreur Instagram (${res.status})`)
     e.code = 'ig_error'
@@ -75,34 +89,20 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
 }
 
 async function me(session) {
-  // Profil deja capture dans la page Instagram (le plus fiable).
+  // Profil deja capture dans la page Instagram (le plus fiable : pas d'appel
+  // reseau supplementaire, donc aucun risque de mismatch).
   if (session.user && session.user.pk) return map.mapUser(session.user)
 
-  // Sinon, on tente cote serveur.
-  const endpoints = [
-    'https://i.instagram.com/api/v1/accounts/current_user/?edit=false',
-    '/api/v1/accounts/current_user/?edit=false',
-    `https://i.instagram.com/api/v1/users/${session.dsUserId}/info/`,
-  ]
-  let lastErr
-  for (const url of endpoints) {
-    try {
-      const data = await webRequest(session, url)
-      if (data?.user) return map.mapUser(data.user)
-    } catch (e) {
-      lastErr = e
-    }
-  }
-  throw lastErr || new Error('Profil indisponible')
+  // Repli reseau (anciennes sessions sans profil capture).
+  const data = await webRequest(session, '/api/v1/accounts/current_user/?edit=false')
+  if (data?.user) return map.mapUser(data.user)
+  throw new Error('Profil indisponible')
 }
 
 // Publications d'un utilisateur (par defaut, le compte connecte).
 async function userFeed(session, userId, count = 12) {
   const id = userId || session.dsUserId
-  const data = await webRequest(
-    session,
-    `/api/v1/feed/user/${id}/?count=${count}`,
-  )
+  const data = await webRequest(session, `/api/v1/feed/user/${id}/?count=${count}`)
   const items = data.items || []
   return items.map(map.mapPost)
 }
@@ -128,11 +128,15 @@ async function inbox(session) {
     .sort((a, b) => b.lastActivity - a.lastActivity)
 }
 
-async function thread(session, id) {
-  const data = await webRequest(
-    session,
-    `/api/v1/direct_v2/threads/${encodeURIComponent(id)}/?visual_message_return_type=unseen&direction=older&media_count=0`,
-  )
+// direction=older + cursor permet de remonter dans l'historique. Sans cursor,
+// Instagram renvoie la page la plus recente (~20 messages).
+async function thread(session, id, { cursor } = {}) {
+  let url =
+    `/api/v1/direct_v2/threads/${encodeURIComponent(id)}/` +
+    `?visual_message_return_type=unseen&direction=older&media_count=0&limit=25`
+  if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`
+
+  const data = await webRequest(session, url)
   const t = data.thread || {}
   const selfPk = session.dsUserId
   const others = (t.users || []).filter((u) => String(u.pk) !== String(selfPk))
@@ -151,6 +155,8 @@ async function thread(session, id) {
       : Math.floor(Date.now() / 1000),
     lastMessage: map.previewText(rawItems[0]),
     messages,
+    hasOlder: Boolean(t.has_older),
+    oldestCursor: t.oldest_cursor || null,
   }
 }
 

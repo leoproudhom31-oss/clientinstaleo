@@ -109,8 +109,10 @@ export const api = {
     return call<{ threads: ThreadPreview[] }>('inbox')
   },
 
-  thread(id: string): Promise<{ thread: Thread }> {
-    return call<{ thread: Thread }>(`thread?id=${encodeURIComponent(id)}`)
+  thread(id: string, cursor?: string): Promise<{ thread: Thread }> {
+    const qs = new URLSearchParams({ id })
+    if (cursor) qs.set('cursor', cursor)
+    return call<{ thread: Thread }>(`thread?${qs.toString()}`)
   },
 
   send(threadId: string, text: string): Promise<{ message: Message }> {
