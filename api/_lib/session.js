@@ -1,14 +1,19 @@
-// Chiffrement + stockage de la session Instagram dans des cookies httpOnly.
-// La session serialisee peut depasser la taille d'un cookie : on la decoupe
-// en plusieurs morceaux (igsess0, igsess1, ...).
+// Chiffrement + stockage d'objets dans des cookies httpOnly.
+// Un objet peut depasser la taille d'un cookie : on le decoupe en morceaux
+// (<prefix>0, <prefix>1, ...). Deux "blobs" sont utilises :
+//   - igsess : la session Instagram (30 jours)
+//   - igch   : l'etat temporaire d'un challenge de securite (15 min)
 
 const crypto = require('crypto')
 const zlib = require('zlib')
 
-const COOKIE_PREFIX = 'igsess'
 const MAX_CHUNKS = 12
 const CHUNK_SIZE = 3400
-const MAX_AGE = 60 * 60 * 24 * 30 // 30 jours
+const SESSION_MAX_AGE = 60 * 60 * 24 * 30 // 30 jours
+const CHALLENGE_MAX_AGE = 60 * 15 // 15 min
+
+const SESSION_PREFIX = 'igsess'
+const CHALLENGE_PREFIX = 'igch'
 
 function getKey() {
   const secret =
@@ -49,11 +54,11 @@ function parseCookies(req) {
   return out
 }
 
-function readSession(req) {
+function readBlob(req, prefix) {
   const cookies = parseCookies(req)
   let combined = ''
   for (let i = 0; i < MAX_CHUNKS; i++) {
-    const c = cookies[`${COOKIE_PREFIX}${i}`]
+    const c = cookies[`${prefix}${i}`]
     if (c === undefined || c === '') break
     combined += c
   }
@@ -66,13 +71,11 @@ function readSession(req) {
 }
 
 function cookieAttrs(maxAge) {
-  return [
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-    'Secure',
-    `Max-Age=${maxAge}`,
-  ].join('; ')
+  const attrs = ['Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${maxAge}`]
+  // En local (http://localhost), l'attribut Secure empecherait le cookie.
+  // Le serveur local definit COOKIE_INSECURE=1 ; sur Vercel (https) il reste absent.
+  if (process.env.COOKIE_INSECURE !== '1') attrs.push('Secure')
+  return attrs.join('; ')
 }
 
 function appendSetCookie(res, cookies) {
@@ -83,7 +86,7 @@ function appendSetCookie(res, cookies) {
   res.setHeader('Set-Cookie', all.concat(cookies))
 }
 
-function writeSession(res, obj) {
+function writeBlob(res, prefix, obj, maxAge) {
   const data = encrypt(obj)
   const chunks = []
   for (let i = 0; i < data.length; i += CHUNK_SIZE) {
@@ -92,20 +95,29 @@ function writeSession(res, obj) {
   const cookies = []
   for (let i = 0; i < MAX_CHUNKS; i++) {
     if (i < chunks.length) {
-      cookies.push(`${COOKIE_PREFIX}${i}=${chunks[i]}; ${cookieAttrs(MAX_AGE)}`)
+      cookies.push(`${prefix}${i}=${chunks[i]}; ${cookieAttrs(maxAge)}`)
     } else {
-      cookies.push(`${COOKIE_PREFIX}${i}=; ${cookieAttrs(0)}`)
+      cookies.push(`${prefix}${i}=; ${cookieAttrs(0)}`)
     }
   }
   appendSetCookie(res, cookies)
 }
 
-function clearSession(res) {
+function clearBlob(res, prefix) {
   const cookies = []
   for (let i = 0; i < MAX_CHUNKS; i++) {
-    cookies.push(`${COOKIE_PREFIX}${i}=; ${cookieAttrs(0)}`)
+    cookies.push(`${prefix}${i}=; ${cookieAttrs(0)}`)
   }
   appendSetCookie(res, cookies)
 }
 
-module.exports = { readSession, writeSession, clearSession, parseCookies }
+module.exports = {
+  parseCookies,
+  readSession: (req) => readBlob(req, SESSION_PREFIX),
+  writeSession: (res, obj) => writeBlob(res, SESSION_PREFIX, obj, SESSION_MAX_AGE),
+  clearSession: (res) => clearBlob(res, SESSION_PREFIX),
+  readChallenge: (req) => readBlob(req, CHALLENGE_PREFIX),
+  writeChallenge: (res, obj) =>
+    writeBlob(res, CHALLENGE_PREFIX, obj, CHALLENGE_MAX_AGE),
+  clearChallenge: (res) => clearBlob(res, CHALLENGE_PREFIX),
+}

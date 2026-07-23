@@ -4,13 +4,13 @@ node_modules
 .pnp.js
 
 # Build output
-dist
+# NB : dist/ est VOLONTAIREMENT versionne (code deja compile, pret a lancer).
 dist-ssr
 *.local
 *.tsbuildinfo
 
-# Vercel
-.vercel
+# Sortie des installeurs Electron
+release
 
 # Env / secrets (NE JAMAIS committer tes identifiants)
 .env

@@ -7,8 +7,18 @@ const { IgApiClient } = require('instagram-private-api')
 const { readSession, writeSession } = require('./session')
 const { json } = require('./http')
 
+// Optionnel : route TOUT le trafic Instagram via un proxy (idealement
+// residentiel/mobile). C'est LA solution quand Instagram bloque les IP de
+// datacenter (Vercel/AWS) et renvoie de faux "mot de passe incorrect".
+function applyProxy(ig) {
+  const proxy = process.env.IG_PROXY
+  if (proxy) ig.state.proxyUrl = proxy
+  return ig
+}
+
 function newClient(seedUsername) {
   const ig = new IgApiClient()
+  applyProxy(ig)
   if (seedUsername) ig.state.generateDevice(seedUsername)
   return ig
 }
@@ -18,14 +28,45 @@ async function clientFromSession(req) {
   if (!state) return null
   const ig = new IgApiClient()
   await ig.state.deserialize(state)
+  applyProxy(ig)
   return ig
+}
+
+// Serialise l'etat du client (sans les constantes, pour reduire la taille).
+async function serializeState(ig) {
+  const serialized = await ig.state.serialize()
+  delete serialized.constants
+  return serialized
 }
 
 // Sauvegarde la session (rafraichie) dans le cookie apres chaque requete.
 async function persist(res, ig) {
-  const serialized = await ig.state.serialize()
-  delete serialized.constants
-  writeSession(res, serialized)
+  writeSession(res, await serializeState(ig))
+}
+
+// Flux "pre-connexion" : imite un vrai appareil pour limiter les checkpoints.
+// Best-effort : un echec ici ne doit pas bloquer la connexion.
+async function preLogin(ig) {
+  try {
+    await ig.simulate.preLoginFlow()
+  } catch {
+    /* non bloquant */
+  }
+}
+
+// Recupere l'utilisateur courant sans jamais planter.
+async function currentUserSafe(ig, fallbackUsername) {
+  try {
+    return await ig.account.currentUser()
+  } catch {
+    let pk = ''
+    try {
+      pk = ig.state.cookieUserId
+    } catch {
+      /* pas encore de cookie utilisateur */
+    }
+    return { pk, username: fallbackUsername }
+  }
 }
 
 // Toutes les images passent par notre propre endpoint /api/img :
@@ -169,6 +210,9 @@ module.exports = {
   newClient,
   clientFromSession,
   persist,
+  serializeState,
+  preLogin,
+  currentUserSafe,
   imgProxy,
   mapUser,
   mapPost,
