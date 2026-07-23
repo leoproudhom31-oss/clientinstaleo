@@ -2,6 +2,7 @@ import { Bookmark, Clapperboard, Rss, ShieldCheck } from 'lucide-react'
 import { useStore } from '../state/store'
 import { PostMessage } from './PostMessage'
 import { EmptyState } from './EmptyState'
+import { useIncremental } from '../lib/useIncremental'
 
 const CHANNEL_LABELS: Record<string, string> = {
   accueil: 'accueil',
@@ -13,6 +14,7 @@ const CHANNEL_LABELS: Record<string, string> = {
 export function FeedView() {
   const { feed, feedLoading, feedChannel, error, mode } = useStore()
   const label = CHANNEL_LABELS[feedChannel] ?? feedChannel
+  const { visible, hasMore, sentinelRef } = useIncremental(feed, 5, 5)
 
   if (feedChannel !== 'accueil') {
     const icon = feedChannel === 'reels' ? <Clapperboard size={40} /> : <Bookmark size={40} />
@@ -70,9 +72,18 @@ export function FeedView() {
             </EmptyState>
           )}
 
-          {feed.map((post) => (
+          {visible.map((post) => (
             <PostMessage key={post.id} post={post} />
           ))}
+          {hasMore && (
+            <div
+              ref={sentinelRef}
+              className="loading-full"
+              style={{ padding: 20 }}
+            >
+              <span className="spinner" /> Chargement…
+            </div>
+          )}
         </div>
       </div>
     </div>

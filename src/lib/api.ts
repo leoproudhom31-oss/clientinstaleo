@@ -101,6 +101,10 @@ export const api = {
     return call<{ posts: Post[] }>('feed')
   },
 
+  profile(): Promise<{ posts: Post[] }> {
+    return call<{ posts: Post[] }>('profile')
+  },
+
   inbox(): Promise<{ threads: ThreadPreview[] }> {
     return call<{ threads: ThreadPreview[] }>('inbox')
   },

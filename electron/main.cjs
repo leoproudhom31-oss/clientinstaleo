@@ -62,8 +62,37 @@ async function captureSession(ses) {
     sessionid,
     dsUserId,
     csrftoken: value('csrftoken') || '',
-    username: value('ds_user') || '', // Instagram expose le pseudo dans ce cookie
+    username: value('ds_user') || '', // Instagram expose parfois le pseudo ici
     cookieHeader: cookies.map((c) => `${c.name}=${c.value}`).join('; '),
+  }
+}
+
+// Recupere le profil connecte DEPUIS la page Instagram (same-origin) : c'est la
+// facon la plus fiable d'obtenir pseudo, nom et photo de profil.
+async function fetchViewer(webContents) {
+  const js = `(async () => {
+    try {
+      const r = await fetch('/api/v1/accounts/current_user/?edit=false', {
+        headers: { 'x-ig-app-id': '936619743392459' },
+        credentials: 'include',
+      });
+      const d = await r.json();
+      const u = d && d.user;
+      if (!u) return null;
+      return {
+        pk: String(u.pk || u.pk_id || ''),
+        username: u.username || '',
+        full_name: u.full_name || '',
+        profile_pic_url: u.profile_pic_url_hd || u.profile_pic_url || '',
+        is_verified: !!u.is_verified,
+        is_private: !!u.is_private,
+      };
+    } catch (e) { return null; }
+  })()`
+  try {
+    return await webContents.executeJavaScript(js)
+  } catch {
+    return null
   }
 }
 
@@ -90,13 +119,18 @@ ipcMain.handle('ig-login', async () => {
     const tryCapture = async () => {
       if (done) return
       const s = await captureSession(ses)
-      if (s) {
-        done = true
-        desktop.set(s)
-        clearInterval(poll)
-        if (!authWin.isDestroyed()) authWin.close()
-        resolve({ ok: true })
+      if (!s) return
+      done = true
+      clearInterval(poll)
+      // Recupere le profil dans le contexte de la page (pseudo, nom, photo).
+      const viewer = await fetchViewer(authWin.webContents)
+      if (viewer) {
+        s.user = viewer
+        if (!s.username) s.username = viewer.username
       }
+      desktop.set(s)
+      if (!authWin.isDestroyed()) authWin.close()
+      resolve({ ok: true })
     }
 
     // Certains changements de cookie ne declenchent pas d'evenement de
