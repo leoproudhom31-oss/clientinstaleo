@@ -1,7 +1,15 @@
 // Donnees de demonstration — 100% locales, aucune connexion requise.
 // Permet de voir l'interface immediatement (et sur Vercel sans identifiants).
 
-import type { Message, Post, Thread, ThreadPreview, User } from '../types'
+import type {
+  Message,
+  Post,
+  Reel,
+  StoryTray,
+  Thread,
+  ThreadPreview,
+  User,
+} from '../types'
 import { generateAvatar } from './avatars'
 
 function mkUser(
@@ -163,6 +171,84 @@ export function demoThreadPreviews(): ThreadPreview[] {
 
 export function demoThreadById(id: string): Thread | undefined {
   return demoThreads.find((t) => t.id === id)
+}
+
+// Stories de demonstration : on reutilise les avatars generes comme visuels
+// (aucune ressource externe). Chaque compte a 1 a 3 "photos".
+export function demoStories(): StoryTray[] {
+  const trays: Array<{ user: User; seen: boolean; count: number }> = [
+    { user: alice, seen: false, count: 3 },
+    { user: studio, seen: false, count: 2 },
+    { user: maxime, seen: false, count: 1 },
+    { user: nina, seen: true, count: 2 },
+    { user: chef, seen: true, count: 1 },
+  ]
+  return trays.map(({ user, seen, count }) => ({
+    id: user.pk,
+    user,
+    seen,
+    mediaCount: count,
+    takenAt: now - 60 * 30,
+    items: Array.from({ length: count }, (_, i) => ({
+      id: `${user.pk}-story-${i}`,
+      takenAt: now - 60 * 30 - i * 120,
+      isVideo: false,
+      imageUrl: user.avatarUrl,
+      videoUrl: null,
+      duration: null,
+    })),
+  }))
+}
+
+// Reels de demonstration : sans vraie video (poster seulement), pour illustrer
+// l'interface hors connexion.
+export function demoReels(): Reel[] {
+  return [
+    {
+      id: 'r1',
+      author: studio,
+      takenAt: now - 60 * 40,
+      caption: 'Best of du shooting en 15 s 🎬',
+      imageUrl: studio.avatarUrl,
+      likeCount: 12045,
+      commentCount: 312,
+      location: null,
+      permalink: null,
+      videoUrl: null,
+      viewCount: 98230,
+    },
+    {
+      id: 'r2',
+      author: maxime,
+      takenAt: now - 60 * 60 * 4,
+      caption: 'Timelapse coucher de soleil 🌇',
+      imageUrl: maxime.avatarUrl,
+      likeCount: 4300,
+      commentCount: 88,
+      location: 'Lyon',
+      permalink: null,
+      videoUrl: null,
+      viewCount: 41200,
+    },
+    {
+      id: 'r3',
+      author: chef,
+      takenAt: now - 60 * 60 * 20,
+      caption: 'Le risotto parfait en 30 s 🍄',
+      imageUrl: chef.avatarUrl,
+      likeCount: 8800,
+      commentCount: 140,
+      location: null,
+      permalink: null,
+      videoUrl: null,
+      viewCount: 67540,
+    },
+  ]
+}
+
+// Publications enregistrees de demonstration.
+export function demoSaved(): Post[] {
+  return [demoFeed[2], demoFeed[0], demoFeed[4]]
 }
 
 // Membres "en ligne / hors ligne" pour la colonne de droite (feed).

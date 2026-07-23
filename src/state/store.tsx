@@ -8,11 +8,24 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { Message, Post, SpaceId, Thread, ThreadPreview, User } from '../types'
+import type {
+  Message,
+  Post,
+  Reel,
+  SpaceId,
+  StoryItem,
+  StoryTray,
+  Thread,
+  ThreadPreview,
+  User,
+} from '../types'
 import { api, ApiError } from '../lib/api'
 import {
   demoFeed,
   demoMe,
+  demoReels,
+  demoSaved,
+  demoStories,
   demoThreadById,
   demoThreadPreviews,
 } from '../lib/mock'
@@ -34,6 +47,21 @@ interface Store {
   feedLoadingMore: boolean
   refreshFeed: () => void
   loadMoreFeed: () => void
+
+  stories: StoryTray[]
+  storiesLoading: boolean
+  refreshStories: () => void
+  loadStoryItems: (reelId: string) => Promise<StoryItem[]>
+
+  reels: Reel[]
+  reelsLoading: boolean
+  reelsLoadingMore: boolean
+  loadMoreReels: () => void
+
+  saved: Post[]
+  savedLoading: boolean
+  savedLoadingMore: boolean
+  loadMoreSaved: () => void
 
   threads: ThreadPreview[]
   threadsLoading: boolean
@@ -82,6 +110,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [feedLoadingMore, setFeedLoadingMore] = useState(false)
   const [feedHasMore, setFeedHasMore] = useState(false)
   const [feedNextMaxId, setFeedNextMaxId] = useState<string | null>(null)
+
+  const [stories, setStories] = useState<StoryTray[]>([])
+  const [storiesLoading, setStoriesLoading] = useState(false)
+
+  const [reels, setReels] = useState<Reel[]>([])
+  const [reelsLoading, setReelsLoading] = useState(false)
+  const [reelsLoadingMore, setReelsLoadingMore] = useState(false)
+  const [reelsHasMore, setReelsHasMore] = useState(false)
+  const [reelsMaxId, setReelsMaxId] = useState<string | null>(null)
+
+  const [saved, setSaved] = useState<Post[]>([])
+  const [savedLoading, setSavedLoading] = useState(false)
+  const [savedLoadingMore, setSavedLoadingMore] = useState(false)
+  const [savedHasMore, setSavedHasMore] = useState(false)
+  const [savedMaxId, setSavedMaxId] = useState<string | null>(null)
 
   const [threads, setThreads] = useState<ThreadPreview[]>([])
   const [threadsLoading, setThreadsLoading] = useState(false)
@@ -151,6 +194,130 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setFeedLoading(false)
     }
   }, [])
+
+  const loadStories = useCallback(async (m: Mode) => {
+    setStoriesLoading(true)
+    setError(null)
+    setErrorCode(undefined)
+    try {
+      if (m === 'demo') {
+        setStories(demoStories())
+      } else {
+        const { trays } = await api.stories()
+        setStories(trays)
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement des stories.')
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
+      setStories([])
+    } finally {
+      setStoriesLoading(false)
+    }
+  }, [])
+
+  // Recupere a la demande les items d'une story (quand le carrousel ne les a
+  // pas deja fournis) et les memorise dans la tuile correspondante.
+  const loadStoryItems = useCallback(
+    async (reelId: string): Promise<StoryItem[]> => {
+      if (modeRef.current === 'demo') {
+        return demoStories().find((t) => t.id === reelId)?.items ?? []
+      }
+      const { items } = await api.storyReel(reelId)
+      setStories((prev) =>
+        prev.map((t) => (t.id === reelId ? { ...t, items } : t)),
+      )
+      return items
+    },
+    [],
+  )
+
+  const loadReels = useCallback(async (m: Mode) => {
+    setReelsLoading(true)
+    setError(null)
+    setErrorCode(undefined)
+    try {
+      if (m === 'demo') {
+        setReels(demoReels())
+        setReelsHasMore(false)
+        setReelsMaxId(null)
+      } else {
+        const { reels: r, hasMore, nextMaxId } = await api.reels()
+        setReels(r)
+        setReelsHasMore(hasMore)
+        setReelsMaxId(nextMaxId)
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement des reels.')
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
+      setReels([])
+      setReelsHasMore(false)
+      setReelsMaxId(null)
+    } finally {
+      setReelsLoading(false)
+    }
+  }, [])
+
+  const loadMoreReels = useCallback(async () => {
+    if (modeRef.current !== 'live' || !reelsHasMore || !reelsMaxId || reelsLoadingMore) return
+    setReelsLoadingMore(true)
+    try {
+      const { reels: r, hasMore, nextMaxId } = await api.reels(reelsMaxId)
+      setReels((prev) => {
+        const seen = new Set(prev.map((p) => p.id))
+        return [...prev, ...r.filter((p) => !seen.has(p.id))]
+      })
+      setReelsHasMore(hasMore)
+      setReelsMaxId(nextMaxId)
+    } catch {
+      /* on garde ce qui est deja affiche */
+    } finally {
+      setReelsLoadingMore(false)
+    }
+  }, [reelsHasMore, reelsMaxId, reelsLoadingMore])
+
+  const loadSaved = useCallback(async (m: Mode) => {
+    setSavedLoading(true)
+    setError(null)
+    setErrorCode(undefined)
+    try {
+      if (m === 'demo') {
+        setSaved(demoSaved())
+        setSavedHasMore(false)
+        setSavedMaxId(null)
+      } else {
+        const { posts, hasMore, nextMaxId } = await api.saved()
+        setSaved(posts)
+        setSavedHasMore(hasMore)
+        setSavedMaxId(nextMaxId)
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement des enregistres.')
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
+      setSaved([])
+      setSavedHasMore(false)
+      setSavedMaxId(null)
+    } finally {
+      setSavedLoading(false)
+    }
+  }, [])
+
+  const loadMoreSaved = useCallback(async () => {
+    if (modeRef.current !== 'live' || !savedHasMore || !savedMaxId || savedLoadingMore) return
+    setSavedLoadingMore(true)
+    try {
+      const { posts, hasMore, nextMaxId } = await api.saved(savedMaxId)
+      setSaved((prev) => {
+        const seen = new Set(prev.map((p) => p.id))
+        return [...prev, ...posts.filter((p) => !seen.has(p.id))]
+      })
+      setSavedHasMore(hasMore)
+      setSavedMaxId(nextMaxId)
+    } catch {
+      /* on garde ce qui est deja affiche */
+    } finally {
+      setSavedLoadingMore(false)
+    }
+  }, [savedHasMore, savedMaxId, savedLoadingMore])
 
   const prefetchMoreFeed = useCallback((maxId: string) => {
     if (feedFetchRef.current) return feedFetchRef.current
@@ -389,14 +556,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [activeThread, me.pk],
   )
 
-  // Charge les donnees quand on change d'espace.
+  // Charge les donnees quand on change d'espace (ou de canal du fil).
   useEffect(() => {
-    if (space === 'feed') loadFeed(mode)
+    if (space === 'feed') {
+      if (feedChannel === 'stories') loadStories(mode)
+      else if (feedChannel === 'reels') loadReels(mode)
+      else if (feedChannel === 'saved') loadSaved(mode)
+      else loadFeed(mode)
+    }
     if (space === 'direct') loadInbox(mode)
-  }, [space, mode, loadFeed, loadInbox])
+  }, [space, feedChannel, mode, loadFeed, loadInbox, loadStories, loadReels, loadSaved])
 
   const refreshFeed = useCallback(() => loadFeed(modeRef.current), [loadFeed])
   const refreshInbox = useCallback(() => loadInbox(modeRef.current), [loadInbox])
+  const refreshStories = useCallback(() => loadStories(modeRef.current), [loadStories])
 
   // Au demarrage : detecte une session "live" existante (cookie), sinon demo.
   useEffect(() => {
@@ -453,6 +626,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       feedLoadingMore,
       refreshFeed,
       loadMoreFeed,
+      stories,
+      storiesLoading,
+      refreshStories,
+      loadStoryItems,
+      reels,
+      reelsLoading,
+      reelsLoadingMore,
+      loadMoreReels,
+      saved,
+      savedLoading,
+      savedLoadingMore,
+      loadMoreSaved,
       threads,
       threadsLoading,
       refreshInbox,
@@ -477,7 +662,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       mode, me, space, feedChannel, feed, feedLoading, feedLoadingMore,
-      refreshFeed, loadMoreFeed, threads,
+      refreshFeed, loadMoreFeed, stories, storiesLoading, refreshStories,
+      loadStoryItems, reels, reelsLoading, reelsLoadingMore, loadMoreReels,
+      saved, savedLoading, savedLoadingMore, loadMoreSaved, threads,
       threadsLoading, refreshInbox,
       activeThreadId, activeThread, threadLoading, olderLoading, openThread,
       loadOlderMessages, sendMessage,

@@ -14,9 +14,14 @@ process.env.COOKIE_INSECURE = '1'
 require(path.join(__dirname, '..', 'server', 'env.cjs')).loadEnv()
 const { start } = require(path.join(__dirname, '..', 'server.cjs'))
 const desktop = require(path.join(__dirname, '..', 'api', '_lib', 'desktop-session.cjs'))
+const pageBridge = require(path.join(__dirname, '..', 'api', '_lib', 'page-bridge.cjs'))
 
 const IG_PARTITION = 'persist:instagram'
 let mainWindow = null
+// Fenetre cachee, chargee sur instagram.com et deja connectee (meme partition) :
+// sert a executer les ECRITURES (envoi de message) dans le vrai contexte de la
+// page, la ou le navigateur ajoute le signal same-origin qu'Instagram exige.
+let igWorker = null
 
 // En-tetes de securite qu'Instagram exige sur ses requetes d'ecriture (envoi de
 // message...). Les LECTURES passent avec les seuls cookies + X-IG-App-ID, mais
@@ -61,10 +66,150 @@ function setupIgHeaderCapture() {
         callback({ requestHeaders: details.requestHeaders })
       },
     )
+    // Journalise les requetes POST de messagerie que la page declenche : c'est
+    // ainsi qu'on VOIT le vrai endpoint d'envoi utilise par Instagram (et son
+    // code HTTP), quand on pilote le composeur.
+    igSession.webRequest.onCompleted(
+      { urls: ['*://*.instagram.com/api/*', '*://*.instagram.com/graphql*', '*://*.instagram.com/ajax/*'] },
+      (details) => {
+        if (details.method !== 'POST') return
+        if (!/direct|broadcast|message|thread|send/i.test(details.url)) return
+        console.log(`[ig-net] POST ${details.url.slice(0, 130)} -> ${details.statusCode}`)
+      },
+    )
     console.log('[ig-headers] interception des en-tetes Instagram active')
   } catch (e) {
     console.warn('[ig-headers] impossible d’activer l’interception :', e?.message || e)
   }
+}
+
+// Cree (ou reutilise) la fenetre cachee connectee a Instagram, et l'amene sur
+// l'URL demandee. Elle partage la partition persist:instagram : si la session
+// est valide, la page est deja authentifiee.
+async function getIgWorker(targetUrl) {
+  if (!igWorker || igWorker.isDestroyed()) {
+    console.log('[ig-send] creation de la fenetre worker Instagram (cachee)')
+    igWorker = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        partition: IG_PARTITION,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    })
+    igWorker.on('closed', () => {
+      igWorker = null
+    })
+  }
+  if (targetUrl && !igWorker.webContents.getURL().startsWith(targetUrl)) {
+    await igWorker.webContents.loadURL(targetUrl)
+    console.log(`[ig-send] worker sur ${targetUrl}`)
+  }
+  return igWorker
+}
+
+// Envoie un message en PILOTANT le vrai composeur d'Instagram dans la page.
+//
+// Pourquoi ne pas rejouer nous-memes la requete ? Parce que le POST
+// /broadcast/text/ est renvoye vers /accounts/login/ pour une session WEB,
+// meme execute depuis la page (endpoint reserve a l'app mobile). La seule voie
+// fiable est donc de laisser le JavaScript d'Instagram construire et envoyer la
+// requete qu'il utilise vraiment : on ouvre la conversation, on ecrit dans le
+// champ, et on declenche l'envoi. On confirme ensuite que le champ s'est vide
+// (Instagram ne le vide qu'apres avoir accepte l'envoi).
+async function igPageSend(threadId, text) {
+  const target = `https://www.instagram.com/direct/t/${encodeURIComponent(threadId)}/`
+  const win = await getIgWorker(target)
+  const wc = win.webContents
+
+  const js = `(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const TEXT = ${JSON.stringify(String(text))};
+    const log = [];
+
+    // 1) Attendre le composeur (textarea ou div contenteditable).
+    const findBox = () => document.querySelector(
+      'textarea[placeholder]'
+      + ', div[contenteditable="true"][role="textbox"]'
+      + ', div[aria-label][contenteditable="true"]'
+      + ', textarea[aria-label]'
+    );
+    let box = null;
+    for (let i = 0; i < 80; i++) { box = findBox(); if (box) break; await sleep(250); }
+    if (!box) {
+      // Peut-etre bloque par login / onetap.
+      const url = location.href;
+      return { ok: false, stage: 'composer', error: 'champ de saisie introuvable', url };
+    }
+
+    // 2) Ecrire le texte de facon a ce que React/l'editeur le prenne en compte,
+    //    en VIDANT d'abord le champ (evite tout brouillon residuel) et SANS
+    //    double insertion.
+    box.focus();
+    const isTextarea = box.tagName === 'TEXTAREA';
+    if (isTextarea) {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(box, '');
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+      setter.call(box, TEXT);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+      // Editeur riche (contenteditable) : execCommand declenche DEJA l'evenement
+      // input natif que l'editeur traite. Il ne faut donc PAS en dispatcher un
+      // second, sinon le texte est insere deux fois (message envoye en double).
+      try { document.execCommand('selectAll', false, null); } catch (e) {}
+      try { document.execCommand('delete', false, null); } catch (e) {}
+      try { document.execCommand('insertText', false, TEXT); } catch (e) {}
+    }
+    await sleep(350);
+    const readBox = () => (isTextarea ? box.value : box.textContent) || '';
+    log.push('texte ecrit len=' + readBox().length);
+
+    // 3) Declencher l'envoi : bouton "Envoyer"/"Send" si present, sinon Entree.
+    const clickSend = () => {
+      const cands = Array.from(document.querySelectorAll('div[role="button"], button, [role="button"]'));
+      const send = cands.find((b) => /^(envoyer|send)$/i.test((b.textContent || '').trim()));
+      if (send) { send.click(); return true; }
+      return false;
+    };
+    let method = 'button';
+    if (!clickSend()) {
+      method = 'enter';
+      for (const type of ['keydown', 'keypress', 'keyup']) {
+        box.dispatchEvent(new KeyboardEvent(type, {
+          key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true,
+        }));
+      }
+    }
+    log.push('envoi declenche via ' + method);
+
+    // 4) Confirmer : le composeur se vide quand Instagram a accepte l'envoi.
+    for (let i = 0; i < 40; i++) {
+      await sleep(250);
+      if (readBox().trim() === '') return { ok: true, method, log };
+    }
+    return { ok: false, stage: 'confirm', error: 'le champ ne s\\'est pas vide (envoi non confirme)', method, log, box: readBox().slice(0, 40) };
+  })()`
+
+  try {
+    const res = await wc.executeJavaScript(js)
+    console.log(
+      `[ig-send] resultat UI : ok=${res?.ok} stage=${res?.stage || '-'} method=${res?.method || '-'}` +
+        `${res?.error ? ' error=' + res.error : ''}${res?.url ? ' url=' + res.url : ''}` +
+        `${res?.log ? ' | ' + res.log.join(' > ') : ''}`,
+    )
+    return res
+  } catch (e) {
+    console.warn('[ig-send] executeJavaScript a echoue :', e?.message || e)
+    return { ok: false, error: String(e?.message || e) }
+  }
+}
+
+function destroyIgWorker() {
+  if (igWorker && !igWorker.isDestroyed()) {
+    igWorker.destroy()
+  }
+  igWorker = null
 }
 
 async function createWindow() {
@@ -254,6 +399,8 @@ ipcMain.handle('ig-login', async () => {
         `[ig-login] en-tetes finaux enregistres : [${Object.keys(s.igHeaders).join(', ') || 'aucun'}]`,
       )
       desktop.set(s)
+      // Repart d'une page worker fraiche (authentifiee) pour les prochains envois.
+      destroyIgWorker()
       console.log('[ig-login] session complete, fenetre fermee')
       if (!authWin.isDestroyed()) authWin.close()
       resolve({ ok: true })
@@ -284,6 +431,8 @@ ipcMain.handle('ig-login', async () => {
 ipcMain.handle('ig-logout', async () => {
   console.log('[ig-login] deconnexion demandee')
   desktop.clear()
+  capturedIgHeaders = {}
+  destroyIgWorker() // la page cachee doit repartir de zero a la prochaine connexion
   try {
     await session.fromPartition(IG_PARTITION).clearStorageData()
   } catch {
@@ -295,6 +444,8 @@ ipcMain.handle('ig-logout', async () => {
 app.whenReady().then(() => {
   console.log('[instaleo] application prete, ouverture de la fenetre principale')
   setupIgHeaderCapture()
+  // Les envois de message passeront par la page reelle (voir page-bridge.cjs).
+  pageBridge.setSender(igPageSend)
   createWindow()
 })
 

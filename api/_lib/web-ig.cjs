@@ -11,6 +11,7 @@
 // invente.
 
 const map = require('./map.cjs')
+const pageBridge = require('./page-bridge.cjs')
 
 const APP_ID = '936619743392459'
 // Repli seulement pour d'anciennes sessions capturees avant l'ajout de cette
@@ -311,6 +312,77 @@ async function feed(session, { maxId } = {}) {
   }
 }
 
+// Carrousel des stories (comptes suivis ayant des stories actives). Endpoint de
+// LECTURE : GET reels_tray. Chaque entree contient l'utilisateur et, souvent,
+// deja ses items ; sinon on les recharge a la demande via storyReel().
+async function stories(session) {
+  const data = await webRequest(session, '/api/v1/feed/reels_tray/')
+  const tray = data.tray || []
+  const mapped = tray
+    .map(map.mapStoryTray)
+    .filter((t) => t.user && t.user.pk)
+    // Tri : non vues d'abord, puis les plus recentes.
+    .sort((a, b) => Number(a.seen) - Number(b.seen) || b.takenAt - a.takenAt)
+  const withItems = mapped.filter((t) => t.items.length).length
+  console.log(
+    `[web-ig] stories() : ${tray.length} entrees -> ${mapped.length} comptes (${withItems} avec items deja charges)`,
+  )
+  return mapped
+}
+
+// Recupere les items (photos/videos) d'une story precise. reelId = pk du compte.
+async function storyReel(session, reelId) {
+  const id = String(reelId)
+  const data = await webRequest(
+    session,
+    `/api/v1/feed/reels_media/?reel_ids=${encodeURIComponent(id)}`,
+  )
+  const reel =
+    data.reels?.[id] ||
+    (Array.isArray(data.reels_media) ? data.reels_media.find((r) => String(r.id) === id) : null)
+  const items = reel?.items || []
+  console.log(`[web-ig] storyReel(${id}) : ${items.length} elements`)
+  return items.map(map.mapStoryItem)
+}
+
+// Fil des reels (onglet Reels). POST clips/home, paginé via paging_info.max_id.
+async function reels(session, { maxId } = {}) {
+  const form = { container_module: 'clips_viewer_clips_tab' }
+  if (maxId) form.max_id = maxId
+  const data = await webRequest(session, '/api/v1/clips/home/', { method: 'POST', form })
+  const items = data.items || data.reels_media || data.clips || []
+  const list = items.map(map.mapReel).filter(Boolean)
+  const paging = data.paging_info || {}
+  console.log(
+    `[web-ig] reels() : ${items.length} elements bruts -> ${list.length} reels | hasMore=${Boolean(paging.more_available)}`,
+  )
+  return {
+    reels: list,
+    hasMore: Boolean(paging.more_available),
+    nextMaxId: paging.max_id || null,
+  }
+}
+
+// Publications enregistrees (onglet Enregistres). GET feed/saved/posts.
+async function saved(session, { maxId } = {}) {
+  let url = '/api/v1/feed/saved/posts/?'
+  if (maxId) url += `max_id=${encodeURIComponent(maxId)}`
+  const data = await webRequest(session, url)
+  const items = data.items || []
+  const posts = items
+    .map((i) => i.media || i)
+    .filter((m) => m && m.user)
+    .map(map.mapPost)
+  console.log(
+    `[web-ig] saved() : ${items.length} elements -> ${posts.length} publications | hasMore=${Boolean(data.more_available)}`,
+  )
+  return {
+    posts,
+    hasMore: Boolean(data.more_available),
+    nextMaxId: data.next_max_id || null,
+  }
+}
+
 async function inbox(session) {
   const data = await webRequest(
     session,
@@ -362,9 +434,48 @@ async function thread(session, id, { cursor } = {}) {
   }
 }
 
+// Envoi en pilotant le VRAI composeur d'Instagram dans la fenetre cachee.
+// C'est la seule voie fiable : le POST /broadcast/text/ est refuse (redirige
+// vers login) pour une session WEB, meme execute depuis la page — c'est un
+// endpoint mobile. En laissant le JS d'Instagram envoyer, on utilise l'endpoint
+// reel qu'il emploie. Renvoie le message mappe, ou lance une erreur codee.
+async function sendViaPage(session, threadId, text) {
+  console.log(`[web-ig] send() : via le composeur de la page Instagram thread=${threadId}`)
+  const res = await pageBridge.send(String(threadId), text)
+  console.log(`[web-ig] send() : reponse UI -> ${JSON.stringify(res).slice(0, 260)}`)
+
+  if (res?.ok) {
+    console.log(`[web-ig] send() : accepte par Instagram (composeur, ${res.method || '?'})`)
+    return {
+      // L'UI ne renvoie pas l'item_id ; on genere un identifiant local. La liste
+      // se resynchronisera au prochain rafraichissement du fil de la conversation.
+      id: `page_${Date.now()}`,
+      senderId: String(session.dsUserId || ''),
+      text,
+      timestamp: Math.floor(Date.now() / 1000),
+      itemType: 'text',
+    }
+  }
+  // Composeur introuvable + URL de login = la page n'est plus authentifiee.
+  if (/accounts\/login/i.test(res?.url || '')) {
+    const e = new Error('Session Instagram expiree. Deconnecte-toi puis reconnecte-toi.')
+    e.code = 'expired'
+    throw e
+  }
+  const e = new Error(res?.error || 'Envoi non confirme par Instagram.')
+  e.code = 'ig_error'
+  throw e
+}
+
 async function send(session, threadId, text) {
+  // Dans Electron, la seule voie fiable est le composeur de la page reelle.
+  if (pageBridge.hasSender()) {
+    return await sendViaPage(session, threadId, text)
+  }
+
+  // Hors Electron (serveur local/Vercel sans fenetre) : repli requete serveur.
   const ctx = uuid()
-  console.log(`[web-ig] send() : envoi vers le thread ${threadId} (client_context=${ctx})`)
+  console.log(`[web-ig] send() : repli serveur vers le thread ${threadId} (client_context=${ctx})`)
   const data = await webRequest(session, '/api/v1/direct_v2/threads/broadcast/text/', {
     method: 'POST',
     form: {
@@ -389,4 +500,16 @@ async function send(session, threadId, text) {
   }
 }
 
-module.exports = { me, meRaw, feed, inbox, thread, send, userFeed }
+module.exports = {
+  me,
+  meRaw,
+  feed,
+  inbox,
+  thread,
+  send,
+  userFeed,
+  stories,
+  storyReel,
+  reels,
+  saved,
+}

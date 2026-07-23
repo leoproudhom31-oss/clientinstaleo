@@ -2,7 +2,16 @@
 // La session Instagram vit dans un cookie httpOnly chiffre cote serveur :
 // on envoie donc credentials: 'include' a chaque appel.
 
-import type { Message, Post, ThreadPreview, Thread, User } from '../types'
+import type {
+  Message,
+  Post,
+  Reel,
+  StoryItem,
+  StoryTray,
+  ThreadPreview,
+  Thread,
+  User,
+} from '../types'
 
 export class ApiError extends Error {
   code?: string
@@ -106,8 +115,26 @@ export const api = {
     return call<{ posts: Post[] }>('profile')
   },
 
+  reels(maxId?: string): Promise<{ reels: Reel[]; hasMore: boolean; nextMaxId: string | null }> {
+    const qs = maxId ? `?maxId=${encodeURIComponent(maxId)}` : ''
+    return call<{ reels: Reel[]; hasMore: boolean; nextMaxId: string | null }>(`reels${qs}`)
+  },
+
+  saved(maxId?: string): Promise<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }> {
+    const qs = maxId ? `?maxId=${encodeURIComponent(maxId)}` : ''
+    return call<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }>(`saved${qs}`)
+  },
+
   inbox(): Promise<{ threads: ThreadPreview[] }> {
     return call<{ threads: ThreadPreview[] }>('inbox')
+  },
+
+  stories(): Promise<{ trays: StoryTray[] }> {
+    return call<{ trays: StoryTray[] }>('stories')
+  },
+
+  storyReel(reel: string): Promise<{ items: StoryItem[] }> {
+    return call<{ items: StoryItem[] }>(`stories?reel=${encodeURIComponent(reel)}`)
   },
 
   thread(id: string, cursor?: string): Promise<{ thread: Thread }> {

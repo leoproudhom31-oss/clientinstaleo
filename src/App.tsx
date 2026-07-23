@@ -12,6 +12,9 @@ import { ServerRail } from './components/ServerRail'
 import { ChannelSidebar } from './components/ChannelSidebar'
 import { MemberList } from './components/MemberList'
 import { FeedView } from './components/FeedView'
+import { StoriesView } from './components/StoriesView'
+import { ReelsView } from './components/ReelsView'
+import { SavedView } from './components/SavedView'
 import { DMView } from './components/DMView'
 import { ProfileView } from './components/ProfileView'
 import { EmptyState } from './components/EmptyState'
@@ -38,12 +41,17 @@ function useHeaderConfig(): HeaderConfig {
   switch (space) {
     case 'feed': {
       const label = FEED_LABELS[feedChannel] ?? feedChannel
+      const DESCRIPTIONS: Record<string, string> = {
+        accueil: 'Le fil de tes abonnements',
+        stories: 'Les stories de tes abonnements',
+        reels: 'Les videos courtes de tes abonnements',
+        saved: 'Tes publications enregistrees',
+      }
       return {
         icon: <Hash size={22} />,
         title: label,
-        description:
-          feedChannel === 'accueil' ? 'Le fil de tes abonnements' : 'Bientot disponible',
-        showMembersToggle: true,
+        description: DESCRIPTIONS[feedChannel] ?? 'Bientot disponible',
+        showMembersToggle: feedChannel === 'accueil',
       }
     }
     case 'direct':
@@ -71,9 +79,11 @@ function useHeaderConfig(): HeaderConfig {
 }
 
 function Workspace() {
-  const { space, membersVisible } = useStore()
+  const { space, feedChannel, membersVisible } = useStore()
   const header = useHeaderConfig()
-  const showMembers = membersVisible && (space === 'feed' || space === 'direct')
+  const showMembers =
+    membersVisible &&
+    ((space === 'feed' && feedChannel === 'accueil') || space === 'direct')
 
   return (
     <div className="main">
@@ -84,7 +94,11 @@ function Workspace() {
         showMembersToggle={header.showMembersToggle}
       />
       <div className="main-body">
-        {space === 'feed' && <FeedView />}
+        {space === 'feed' && feedChannel === 'stories' && <StoriesView />}
+        {space === 'feed' && feedChannel === 'reels' && <ReelsView />}
+        {space === 'feed' && feedChannel === 'saved' && <SavedView />}
+        {space === 'feed' &&
+          !['stories', 'reels', 'saved'].includes(feedChannel) && <FeedView />}
         {space === 'direct' && <DMView />}
         {space === 'profile' && <ProfileView />}
         {space === 'explore' && (
