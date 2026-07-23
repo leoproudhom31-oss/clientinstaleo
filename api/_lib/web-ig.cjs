@@ -28,6 +28,33 @@ function uuid() {
   })
 }
 
+// "fetch failed" (TypeError de Node/undici) signifie que la requete n'a MEME
+// PAS atteint Instagram : DNS, coupure reseau, blip momentane... Ce n'est pas
+// un rejet d'Instagram, donc pas la peine de demander une reconnexion — on
+// retente automatiquement quelques fois avant d'abandonner, et on journalise
+// la cause precise (ENOTFOUND, ECONNRESET, ETIMEDOUT...) pour diagnostic.
+async function fetchResilient(url, opts, attempts = 3, delayMs = 900) {
+  let lastErr
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fetch(url, opts)
+    } catch (e) {
+      lastErr = e
+      const cause = e?.cause?.code || e?.cause?.message || e?.message || 'inconnue'
+      console.warn(
+        `[web-ig] echec reseau (essai ${i + 1}/${attempts}) vers ${url} : ${cause}`,
+      )
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs))
+    }
+  }
+  const cause = lastErr?.cause?.code || lastErr?.cause?.message || lastErr?.message || 'inconnue'
+  const e = new Error(
+    `Connexion a Instagram impossible (${cause}). Verifie ta connexion internet, puis reessaie.`,
+  )
+  e.code = 'network'
+  throw e
+}
+
 async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${BASE}${pathOrUrl}`
   const headers = {
@@ -51,7 +78,7 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
     body = new URLSearchParams(form).toString()
   }
 
-  const res = await fetch(url, { method, headers, body })
+  const res = await fetchResilient(url, { method, headers, body })
 
   // Instagram renvoie un nouveau claim a chaque reponse : on le memorise pour
   // les appels suivants (mutation directe de l'objet session, qui est la meme

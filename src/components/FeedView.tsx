@@ -3,6 +3,7 @@ import { useStore } from '../state/store'
 import { PostMessage } from './PostMessage'
 import { EmptyState } from './EmptyState'
 import { useIncremental } from '../lib/useIncremental'
+import { errorHint } from '../lib/errors'
 
 const CHANNEL_LABELS: Record<string, string> = {
   accueil: 'accueil',
@@ -12,7 +13,7 @@ const CHANNEL_LABELS: Record<string, string> = {
 }
 
 export function FeedView() {
-  const { feed, feedLoading, feedChannel, error, mode } = useStore()
+  const { feed, feedLoading, feedChannel, error, errorCode } = useStore()
   const label = CHANNEL_LABELS[feedChannel] ?? feedChannel
   const { visible, hasMore, sentinelRef } = useIncremental(feed, 5, 5)
 
@@ -55,8 +56,7 @@ export function FeedView() {
           {error && (
             <div className="form-error" style={{ margin: '12px 16px' }}>
               {error}
-              {mode === 'live' &&
-                ' — Instagram limite parfois les connexions depuis un serveur. Reessaie plus tard ou repasse en mode demo.'}
+              {errorHint(errorCode) && ` — ${errorHint(errorCode)}`}
             </div>
           )}
 

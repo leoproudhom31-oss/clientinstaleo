@@ -277,6 +277,41 @@ a:hover {
   font-weight: 500;
 }
 
+/* Erreur de chargement dans la colonne des canaux (ex : inbox indisponible) */
+.sidebar-error {
+  margin: 4px 4px 8px;
+  padding: 10px 12px;
+  background: rgba(218, 55, 60, 0.08);
+  border: 1px solid rgba(218, 55, 60, 0.25);
+  border-radius: 6px;
+}
+.sidebar-error-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #f5a3a5;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.sidebar-error-hint {
+  margin: 6px 0 0 23px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.sidebar-error-retry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0 23px;
+  color: var(--text-link);
+  font-size: 12px;
+  font-weight: 600;
+}
+.sidebar-error-retry:hover {
+  text-decoration: underline;
+}
+
 .channel-item {
   display: flex;
   align-items: center;

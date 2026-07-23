@@ -4,6 +4,7 @@ import {
   Image as ImageIcon,
   Info,
   Phone,
+  RefreshCw,
   Share2,
   TriangleAlert,
 } from 'lucide-react'
@@ -18,6 +19,7 @@ import {
   formatShortTime,
   shouldGroup,
 } from '../lib/format'
+import { errorHint } from '../lib/errors'
 import type { Message, User } from '../types'
 
 const META_ICON: Record<string, typeof ImageIcon> = {
@@ -124,8 +126,17 @@ function MessageRow({
 }
 
 export function DMView() {
-  const { activeThread, threadLoading, olderLoading, loadOlderMessages, me } =
-    useStore()
+  const {
+    activeThread,
+    activeThreadId,
+    threadLoading,
+    olderLoading,
+    loadOlderMessages,
+    openThread,
+    error,
+    errorCode,
+    me,
+  } = useStore()
   const scrollRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
@@ -196,6 +207,31 @@ export function DMView() {
     prevLastId.current = null
     anchor.current = null
   }, [activeThread?.id])
+
+  // Une conversation a ete choisie mais n'a pas pu charger (pas un simple
+  // "rien n'est selectionne") : on le dit clairement, avec un moyen de reessayer.
+  if (!activeThread && !threadLoading && activeThreadId && error) {
+    return (
+      <div className="content">
+        <EmptyState
+          icon={<TriangleAlert size={40} />}
+          title="Conversation indisponible"
+          action={
+            <button
+              className="btn btn-secondary"
+              style={{ width: 'auto', padding: '8px 16px' }}
+              onClick={() => openThread(activeThreadId)}
+            >
+              <RefreshCw size={15} /> Reessayer
+            </button>
+          }
+        >
+          {error}
+          {errorHint(errorCode) && <> {errorHint(errorCode)}</>}
+        </EmptyState>
+      </div>
+    )
+  }
 
   if (!activeThread && !threadLoading) {
     return (

@@ -30,8 +30,9 @@ function json(res, status, payload) {
 // Traduit une erreur { code } (voie session web) en reponse HTTP.
 function apiError(res, e) {
   const code = e?.code
-  const status =
-    code === 'expired' || code === 'checkpoint' || code === 'ua_mismatch' ? 401 : 502
+  let status = 502
+  if (code === 'expired' || code === 'checkpoint' || code === 'ua_mismatch') status = 401
+  else if (code === 'network') status = 503 // upstream injoignable, pas un rejet applicatif
   return json(res, status, {
     error: e?.message || 'Erreur cote Instagram.',
     code: code || 'error',

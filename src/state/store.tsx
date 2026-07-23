@@ -31,9 +31,11 @@ interface Store {
 
   feed: Post[]
   feedLoading: boolean
+  refreshFeed: () => void
 
   threads: ThreadPreview[]
   threadsLoading: boolean
+  refreshInbox: () => void
   activeThreadId: string | null
   activeThread: Thread | null
   threadLoading: boolean
@@ -43,6 +45,7 @@ interface Store {
   sendMessage: (text: string) => void
 
   error: string | null
+  errorCode: string | undefined
 
   membersVisible: boolean
   toggleMembers: () => void
@@ -83,6 +86,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [olderLoading, setOlderLoading] = useState(false)
 
   const [error, setError] = useState<string | null>(null)
+  const [errorCode, setErrorCode] = useState<string | undefined>(undefined)
   const [membersVisible, setMembersVisible] = useState(true)
   const [loginOpen, setLoginOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -109,6 +113,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const loadFeed = useCallback(async (m: Mode) => {
     setFeedLoading(true)
     setError(null)
+    setErrorCode(undefined)
     try {
       if (m === 'demo') {
         setFeed(demoFeed)
@@ -118,6 +123,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement du fil.')
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
       setFeed([])
     } finally {
       setFeedLoading(false)
@@ -127,6 +133,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const loadInbox = useCallback(async (m: Mode) => {
     setThreadsLoading(true)
     setError(null)
+    setErrorCode(undefined)
     try {
       if (m === 'demo') {
         setThreads(demoThreadPreviews())
@@ -136,6 +143,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement des messages.')
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
       setThreads([])
     } finally {
       setThreadsLoading(false)
@@ -146,6 +154,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setActiveThreadId(id)
     setActiveThread(null)
     setThreadLoading(true)
+    setError(null)
+    setErrorCode(undefined)
     olderBufferRef.current = null
     const reqId = ++threadReq.current
     const m = modeRef.current
@@ -162,6 +172,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         if (reqId !== threadReq.current) return
         setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement de la conversation.')
+        setErrorCode(e instanceof ApiError ? e.code : undefined)
       } finally {
         if (reqId === threadReq.current) setThreadLoading(false)
       }
@@ -296,6 +307,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (space === 'direct') loadInbox(mode)
   }, [space, mode, loadFeed, loadInbox])
 
+  const refreshFeed = useCallback(() => loadFeed(modeRef.current), [loadFeed])
+  const refreshInbox = useCallback(() => loadInbox(modeRef.current), [loadInbox])
+
   // Au demarrage : detecte une session "live" existante (cookie), sinon demo.
   useEffect(() => {
     let cancelled = false
@@ -348,8 +362,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setFeedChannel,
       feed,
       feedLoading,
+      refreshFeed,
       threads,
       threadsLoading,
+      refreshInbox,
       activeThreadId,
       activeThread,
       threadLoading,
@@ -358,6 +374,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loadOlderMessages,
       sendMessage,
       error,
+      errorCode,
       membersVisible,
       toggleMembers,
       loginOpen,
@@ -369,10 +386,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       switchToDemo,
     }),
     [
-      mode, me, space, feedChannel, feed, feedLoading, threads, threadsLoading,
+      mode, me, space, feedChannel, feed, feedLoading, refreshFeed, threads,
+      threadsLoading, refreshInbox,
       activeThreadId, activeThread, threadLoading, olderLoading, openThread,
       loadOlderMessages, sendMessage,
-      error, membersVisible, toggleMembers, loginOpen, settingsOpen,
+      error, errorCode, membersVisible, toggleMembers, loginOpen, settingsOpen,
       onLoggedIn, logout, switchToDemo,
     ],
   )
