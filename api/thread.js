@@ -1,6 +1,6 @@
 // GET /api/thread?id=<thread_id> — les messages d'une conversation.
 
-const { json } = require('./_lib/http')
+const { json, apiError } = require('./_lib/http')
 const {
   clientFromSession,
   persist,
@@ -9,10 +9,21 @@ const {
   previewText,
   handleError,
 } = require('./_lib/ig')
+const desktop = require('./_lib/desktop-session.cjs')
+const web = require('./_lib/web-ig.cjs')
 
 module.exports = async (req, res) => {
   const id = req.query?.id
   if (!id) return json(res, 400, { error: 'Parametre id manquant' })
+
+  const sess = desktop.get()
+  if (sess) {
+    try {
+      return json(res, 200, { thread: await web.thread(sess, String(id)) })
+    } catch (e) {
+      return apiError(res, e)
+    }
+  }
 
   const ig = await clientFromSession(req)
   if (!ig) return json(res, 401, { error: 'Non connecte', code: 'no_session' })
@@ -20,13 +31,12 @@ module.exports = async (req, res) => {
   try {
     const selfPk = ig.state.cookieUserId
     const feed = ig.feed.directThread({ thread_id: String(id) })
-    // request() renvoie le thread complet (titre, participants, messages).
     const body = await feed.request()
     const t = body.thread || {}
     const others = (t.users || []).filter((u) => String(u.pk) !== String(selfPk))
     const users = others.map(mapUser)
     const rawItems = t.items || []
-    const messages = rawItems.map(mapMessage).reverse() // du plus ancien au plus recent
+    const messages = rawItems.map(mapMessage).reverse()
     const last = rawItems[0]
 
     const thread = {

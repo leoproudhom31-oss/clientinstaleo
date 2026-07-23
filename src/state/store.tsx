@@ -218,6 +218,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     api.logout().catch(() => undefined)
+    window.instaleoDesktop?.igLogout?.().catch?.(() => undefined)
     setSettingsOpen(false)
     switchToDemo()
   }, [switchToDemo])

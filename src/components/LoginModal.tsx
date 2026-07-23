@@ -1,5 +1,6 @@
 import {
   Check,
+  Instagram,
   Lock,
   MailCheck,
   ShieldCheck,
@@ -10,6 +11,7 @@ import {
 import { useEffect, useState } from 'react'
 import { useStore } from '../state/store'
 import { api, ApiError } from '../lib/api'
+import { desktop, isDesktop } from '../lib/desktop'
 
 type Step = 'credentials' | 'twofactor' | 'challenge'
 
@@ -23,6 +25,7 @@ export function LoginModal() {
   const [method, setMethod] = useState('1')
   const [hint, setHint] = useState('')
   const [loading, setLoading] = useState(false)
+  const [browserLoading, setBrowserLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function close() {
@@ -58,6 +61,30 @@ export function LoginModal() {
       setStep('challenge')
     } else if ('user' in res) {
       onLoggedIn(res.user)
+    }
+  }
+
+  // Connexion via une vraie fenetre Instagram (app de bureau) : la connexion a
+  // lieu sur la page officielle, aucun robot detecte.
+  async function browserLogin() {
+    if (!desktop) return
+    setBrowserLoading(true)
+    setError(null)
+    try {
+      const r = await desktop.igLogin()
+      if (r.cancelled) return
+      if (!r.ok) {
+        setError("La connexion Instagram n'a pas abouti. Reessaie.")
+        return
+      }
+      const { user } = await api.me()
+      onLoggedIn(user)
+    } catch {
+      setError(
+        'Connexion etablie mais impossible de charger ton profil. Reessaie dans un instant.',
+      )
+    } finally {
+      setBrowserLoading(false)
     }
   }
 
@@ -122,8 +149,60 @@ export function LoginModal() {
             <>
               <h2 className="modal-title">Se connecter a Instagram</h2>
               <p className="modal-subtitle">
-                Tes identifiants transitent uniquement par ton propre serveur.
+                {isDesktop
+                  ? 'Connexion sur la vraie page Instagram, sans blocage.'
+                  : 'Tes identifiants transitent uniquement par ton propre serveur.'}
               </p>
+
+              {isDesktop && (
+                <>
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    onClick={browserLogin}
+                    disabled={browserLoading}
+                    style={{ marginTop: 8 }}
+                  >
+                    {browserLoading ? (
+                      <span className="spinner" />
+                    ) : (
+                      <Instagram size={18} />
+                    )}
+                    {browserLoading
+                      ? 'Fenetre Instagram ouverte…'
+                      : 'Se connecter avec Instagram'}
+                  </button>
+                  <div className="privacy-row" style={{ marginTop: 10 }}>
+                    <ShieldCheck className="pr-ok" size={16} />
+                    Recommande : tu te connectes dans une vraie fenetre Instagram
+                    (2FA gerees par Instagram), puis l'app reutilise ta session.
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      margin: '18px 0 6px',
+                      color: 'var(--text-faint)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    <span style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
+                    ou identifiants (avance)
+                    <span style={{ flex: 1, height: 1, background: 'var(--divider)' }} />
+                  </div>
+                </>
+              )}
+
+              {!isDesktop && (
+                <div className="privacy-row" style={{ marginBottom: 8 }}>
+                  <TriangleAlert className="pr-warn" size={16} />
+                  La connexion reelle fonctionne surtout dans l'app de bureau
+                  (npm start). Ici, prefere le mode demo.
+                </div>
+              )}
 
               <form onSubmit={submitCredentials}>
                 <label className="form-label">
