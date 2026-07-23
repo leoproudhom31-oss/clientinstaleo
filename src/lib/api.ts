@@ -97,8 +97,9 @@ export const api = {
     return call<{ ok: true }>('logout', { method: 'POST' })
   },
 
-  feed(): Promise<{ posts: Post[] }> {
-    return call<{ posts: Post[] }>('feed')
+  feed(maxId?: string): Promise<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }> {
+    const qs = maxId ? `?maxId=${encodeURIComponent(maxId)}` : ''
+    return call<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }>(`feed${qs}`)
   },
 
   profile(): Promise<{ posts: Post[] }> {

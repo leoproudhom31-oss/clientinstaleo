@@ -224,13 +224,23 @@ async function userFeed(session, userId, count = 12) {
   return items.map(map.mapPost)
 }
 
-async function feed(session) {
+// maxId (renvoye par Instagram sous next_max_id) permet de demander la suite
+// du fil : sans lui, on obtient toujours la meme premiere page.
+async function feed(session, { maxId } = {}) {
+  const form = maxId
+    ? { reason: 'pagination', max_id: maxId, is_pull_to_refresh: '0' }
+    : { reason: 'cold_start_fetch', is_pull_to_refresh: '0' }
   const data = await webRequest(session, '/api/v1/feed/timeline/', {
     method: 'POST',
-    form: { reason: 'cold_start_fetch', is_pull_to_refresh: '0' },
+    form,
   })
   const items = data.feed_items || data.items || []
-  return items.map(map.extractMedia).filter(Boolean).map(map.mapPost)
+  const posts = items.map(map.extractMedia).filter(Boolean).map(map.mapPost)
+  return {
+    posts,
+    hasMore: Boolean(data.more_available),
+    nextMaxId: data.next_max_id || null,
+  }
 }
 
 async function inbox(session) {

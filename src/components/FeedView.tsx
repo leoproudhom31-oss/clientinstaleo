@@ -1,8 +1,8 @@
 import { Bookmark, Clapperboard, Rss, ShieldCheck } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { useStore } from '../state/store'
 import { PostMessage } from './PostMessage'
 import { EmptyState } from './EmptyState'
-import { useIncremental } from '../lib/useIncremental'
 import { errorHint } from '../lib/errors'
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -13,9 +13,37 @@ const CHANNEL_LABELS: Record<string, string> = {
 }
 
 export function FeedView() {
-  const { feed, feedLoading, feedChannel, error, errorCode } = useStore()
+  const {
+    feed,
+    feedLoading,
+    feedLoadingMore,
+    loadMoreFeed,
+    feedChannel,
+    error,
+    errorCode,
+    mode,
+  } = useStore()
   const label = CHANNEL_LABELS[feedChannel] ?? feedChannel
-  const { visible, hasMore, sentinelRef } = useIncremental(feed, 5, 5)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  // Defilement infini (mode connecte uniquement : la demo n'a qu'un jeu de
+  // donnees fixe). Marge large pour precharger avant que l'utilisateur
+  // n'atteigne visuellement le bas.
+  useEffect(() => {
+    if (mode !== 'live') return
+    const el = sentinelRef.current
+    const root = containerRef.current
+    if (!el || !root) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) loadMoreFeed()
+      },
+      { root, rootMargin: '1200px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [mode, loadMoreFeed, feed.length])
 
   if (feedChannel !== 'accueil') {
     const icon = feedChannel === 'reels' ? <Clapperboard size={40} /> : <Bookmark size={40} />
@@ -31,7 +59,7 @@ export function FeedView() {
 
   return (
     <div className="content">
-      <div className="messages scroll">
+      <div className="messages scroll" ref={containerRef}>
         <div className="messages-inner">
           <div style={{ padding: '32px 16px 8px' }}>
             <div
@@ -72,15 +100,15 @@ export function FeedView() {
             </EmptyState>
           )}
 
-          {visible.map((post) => (
+          {feed.map((post) => (
             <PostMessage key={post.id} post={post} />
           ))}
-          {hasMore && (
-            <div
-              ref={sentinelRef}
-              className="loading-full"
-              style={{ padding: 20 }}
-            >
+
+          {mode === 'live' && !feedLoading && (
+            <div ref={sentinelRef} style={{ height: 1 }} />
+          )}
+          {feedLoadingMore && (
+            <div className="loading-full" style={{ padding: 20 }}>
               <span className="spinner" /> Chargement…
             </div>
           )}
