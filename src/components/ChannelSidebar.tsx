@@ -15,6 +15,7 @@ import { spaceMeta } from '../lib/spaces'
 import { Avatar } from './Avatar'
 import { UserPanel } from './UserPanel'
 import { formatRelative } from '../lib/format'
+import { useIncremental } from '../lib/useIncremental'
 import type { ThreadPreview } from '../types'
 
 const FEED_CHANNELS = [
@@ -60,6 +61,7 @@ export function ChannelSidebar() {
     threadsLoading,
   } = useStore()
   const meta = spaceMeta(space)
+  const dm = useIncremental(threads, 12, 10)
 
   return (
     <aside className="channel-sidebar">
@@ -113,9 +115,18 @@ export function ChannelSidebar() {
                 <span className="ci-sub">Aucune conversation</span>
               </div>
             )}
-            {threads.map((t) => (
+            {dm.visible.map((t) => (
               <DmItem key={t.id} t={t} />
             ))}
+            {dm.hasMore && (
+              <div
+                ref={dm.sentinelRef}
+                className="channel-item"
+                style={{ cursor: 'default', justifyContent: 'center' }}
+              >
+                <span className="spinner" />
+              </div>
+            )}
           </>
         )}
 

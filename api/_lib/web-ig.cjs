@@ -75,7 +75,10 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
 }
 
 async function me(session) {
-  // Plusieurs endpoints possibles selon l'hote ; on prend le premier qui repond.
+  // Profil deja capture dans la page Instagram (le plus fiable).
+  if (session.user && session.user.pk) return map.mapUser(session.user)
+
+  // Sinon, on tente cote serveur.
   const endpoints = [
     'https://i.instagram.com/api/v1/accounts/current_user/?edit=false',
     '/api/v1/accounts/current_user/?edit=false',
@@ -91,6 +94,17 @@ async function me(session) {
     }
   }
   throw lastErr || new Error('Profil indisponible')
+}
+
+// Publications d'un utilisateur (par defaut, le compte connecte).
+async function userFeed(session, userId, count = 12) {
+  const id = userId || session.dsUserId
+  const data = await webRequest(
+    session,
+    `/api/v1/feed/user/${id}/?count=${count}`,
+  )
+  const items = data.items || []
+  return items.map(map.mapPost)
 }
 
 async function feed(session) {
@@ -161,4 +175,4 @@ async function send(session, threadId, text) {
   }
 }
 
-module.exports = { me, feed, inbox, thread, send }
+module.exports = { me, feed, inbox, thread, send, userFeed }
