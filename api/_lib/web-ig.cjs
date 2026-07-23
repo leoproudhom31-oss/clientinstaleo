@@ -28,6 +28,22 @@ function uuid() {
   })
 }
 
+// Utilitaires de journalisation : donnent assez de detail pour diagnostiquer
+// sans jamais afficher une valeur secrete en entier (le terminal peut etre
+// copie-colle dans une conversation).
+function mask(v) {
+  if (!v) return '(absent)'
+  const s = String(v)
+  return s.length <= 10 ? `${s.slice(0, 2)}…` : `${s.slice(0, 4)}…${s.slice(-4)}`
+}
+function cookieNames(cookieHeader) {
+  return (cookieHeader || '')
+    .split(/;\s*/)
+    .map((p) => p.split('=')[0])
+    .filter(Boolean)
+}
+let reqSeq = 0
+
 // "fetch failed" (TypeError de Node/undici) signifie que la requete n'a MEME
 // PAS atteint Instagram : DNS, coupure reseau, blip momentane... Ce n'est pas
 // un rejet d'Instagram, donc pas la peine de demander une reconnexion — on
@@ -120,6 +136,15 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } 
   }
   if (form) body = new URLSearchParams(form).toString()
 
+  const seq = ++reqSeq
+  const t0 = Date.now()
+  console.log(
+    `[web-ig #${seq}] -> ${method} ${url}` +
+      `${form ? ` | form=${Object.keys(form).join(',')}` : ''}` +
+      ` | cookies=[${cookieNames(session.cookieHeader).join(',')}]` +
+      ` | csrftoken=${mask(session.csrftoken)} claim=${mask(session.wwwClaim)}`,
+  )
+
   // Boucle de redirection geree a la main : sur un 3xx, on absorbe les cookies
   // de routage puis on rejoue la MEME requete (methode + corps preserves) avec
   // les cookies a jour, jusqu'a obtenir une vraie reponse.
@@ -139,9 +164,13 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } 
     if (!REDIRECT_STATUS.has(res.status)) break
 
     const location = res.headers.get('location') || ''
+    console.log(
+      `[web-ig #${seq}]    redirection ${res.status} -> ${location.slice(0, 140)} (essai ${redirects + 1}/${MAX_REDIRECTS})`,
+    )
+
     if (/\/challenge/i.test(location)) {
       console.warn(
-        `[web-ig] ${method} ${url} -> redirige vers un challenge (location=${location.slice(0, 100)})`,
+        `[web-ig #${seq}] <- CHECKPOINT apres ${Date.now() - t0}ms : ${method} ${url} redirige vers un challenge (${location.slice(0, 100)})`,
       )
       const e = new Error(
         'Instagram demande une verification pour cette action (checkpoint). Ouvre l’app officielle, confirme, puis reessaie.',
@@ -151,16 +180,15 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } 
     }
     if (/\/accounts\/login/i.test(location)) {
       console.warn(
-        `[web-ig] ${method} ${url} -> redirige vers la connexion (location=${location.slice(0, 100)}) | csrftoken present=${Boolean(session.csrftoken)} wwwClaim=${session.wwwClaim || '(aucun)'}`,
+        `[web-ig #${seq}] <- SESSION EXPIREE apres ${Date.now() - t0}ms : ${method} ${url} redirige vers la connexion (${location.slice(0, 100)}) ` +
+          `| cookies=[${cookieNames(session.cookieHeader).join(',')}] csrftoken=${mask(session.csrftoken)} claim=${mask(session.wwwClaim)}`,
       )
       const e = new Error('Session Instagram expiree. Deconnecte-toi puis reconnecte-toi.')
       e.code = 'expired'
       throw e
     }
     if (redirects >= MAX_REDIRECTS) {
-      console.warn(
-        `[web-ig] ${method} ${url} -> boucle de redirection (location=${location.slice(0, 80)})`,
-      )
+      console.warn(`[web-ig #${seq}] <- BOUCLE DE REDIRECTION apres ${Date.now() - t0}ms : ${method} ${url}`)
       const e = new Error(
         'Instagram redirige la requete en boucle (routage de session). Deconnecte-toi puis reconnecte-toi.',
       )
@@ -183,13 +211,13 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } 
   // dans le corps de la reponse, pas via le code HTTP. Sans cette detection,
   // un envoi refuse par Instagram serait pris pour une reussite.
   const appFailed = data?.status === 'fail'
+  const ms = Date.now() - t0
 
-  // Journalise les echecs dans le terminal (npm start) pour diagnostic.
-  if (!res.ok || !data || appFailed) {
-    console.warn(
-      `[web-ig] ${method} ${url} -> ${res.status} ${res.statusText}${appFailed ? ' (status=fail)' : ''} | ${text.slice(0, 220)}`,
-    )
-  }
+  // Journalise TOUTES les reponses (pas seulement les echecs) : c'est ce qui
+  // permet de voir immediatement ce qu'Instagram a vraiment renvoye.
+  console.log(
+    `[web-ig #${seq}] <- ${res.status} ${res.statusText} en ${ms}ms${appFailed ? ' (status=fail)' : ''} | ${text.slice(0, 400)}`,
+  )
 
   if (res.status === 401 || res.status === 403 || data?.message === 'login_required') {
     const e = new Error('Session Instagram expiree. Reconnecte-toi.')
@@ -221,7 +249,10 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } 
 async function meRaw(session) {
   // Profil deja capture dans la page Instagram (le plus fiable : pas d'appel
   // reseau supplementaire, donc aucun risque de mismatch).
-  if (session.user && session.user.username) return session.user
+  if (session.user && session.user.username) {
+    console.log(`[web-ig] me() : profil deja en cache (${session.user.username}), pas d'appel reseau`)
+    return session.user
+  }
 
   // Repli reseau (session sans profil capture au login).
   const data = await webRequest(session, '/api/v1/accounts/current_user/?edit=false')
@@ -253,6 +284,10 @@ async function feed(session, { maxId } = {}) {
   })
   const items = data.feed_items || data.items || []
   const posts = items.map(map.extractMedia).filter(Boolean).map(map.mapPost)
+  console.log(
+    `[web-ig] feed() : ${items.length} elements bruts -> ${posts.length} publications retenues ` +
+      `(${items.length - posts.length} filtrees : pub/suggestion/format non gere) | hasMore=${Boolean(data.more_available)}`,
+  )
   return {
     posts,
     hasMore: Boolean(data.more_available),
@@ -267,6 +302,7 @@ async function inbox(session) {
   )
   const threads = data.inbox?.threads || []
   const selfPk = session.dsUserId
+  console.log(`[web-ig] inbox() : ${threads.length} conversations recues`)
   return threads
     .map((t) => map.mapThreadPreview(t, selfPk))
     .sort((a, b) => b.lastActivity - a.lastActivity)
@@ -289,6 +325,10 @@ async function thread(session, id, { cursor } = {}) {
   const users = others.map(map.mapUser)
   const rawItems = t.items || []
   const messages = rawItems.map(map.mapMessage).reverse()
+  console.log(
+    `[web-ig] thread(${id}) : ${rawItems.length} elements -> ${messages.length} messages | ` +
+      `hasOlder=${Boolean(t.has_older)} oldestCursor=${t.oldest_cursor ? mask(t.oldest_cursor) : '(aucun)'}`,
+  )
   return {
     id: String(id),
     title:
@@ -308,6 +348,7 @@ async function thread(session, id, { cursor } = {}) {
 
 async function send(session, threadId, text) {
   const ctx = uuid()
+  console.log(`[web-ig] send() : envoi vers le thread ${threadId} (client_context=${ctx})`)
   const data = await webRequest(session, '/api/v1/direct_v2/threads/broadcast/text/', {
     method: 'POST',
     form: {
@@ -322,6 +363,7 @@ async function send(session, threadId, text) {
   // webRequest a deja leve une erreur si data.status === 'fail' : arriver ici
   // signifie qu'Instagram a accepte et diffuse le message.
   const item = data?.payload || data?.payload?.[0]
+  console.log(`[web-ig] send() : accepte par Instagram, item_id=${item?.item_id || '(absent, repli sur ' + ctx + ')'}`)
   return {
     id: String(item?.item_id || ctx),
     senderId: String(session.dsUserId || ''),

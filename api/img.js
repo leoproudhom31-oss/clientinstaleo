@@ -23,6 +23,7 @@ module.exports = async (req, res) => {
   }
 
   if (url.protocol !== 'https:' || !ALLOWED.some((re) => re.test(url.hostname))) {
+    console.warn(`[api:img] domaine refuse : ${url.hostname}`)
     return json(res, 403, { error: 'Domaine non autorise' })
   }
 
@@ -30,7 +31,10 @@ module.exports = async (req, res) => {
     const upstream = await fetch(url.toString(), {
       headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'image/*' },
     })
-    if (!upstream.ok) return json(res, 502, { error: 'Image indisponible' })
+    if (!upstream.ok) {
+      console.warn(`[api:img] ${upstream.status} pour ${url.hostname}${url.pathname}`)
+      return json(res, 502, { error: 'Image indisponible' })
+    }
 
     const buf = Buffer.from(await upstream.arrayBuffer())
     res.status(200)

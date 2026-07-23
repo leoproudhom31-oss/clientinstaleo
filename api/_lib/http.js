@@ -45,4 +45,14 @@ function apiError(res, e) {
   })
 }
 
-module.exports = { readJson, json, apiError }
+// Log uniforme en entree de chaque endpoint : quelle voie est utilisee
+// (session web capturee par Electron, ou repli instagram-private-api) et
+// avec quelle identite. Aide a savoir d'un coup d'oeil pourquoi un appel
+// prend tel ou tel chemin.
+function logRoute(name, hasWebSession, extra = '') {
+  console.log(
+    `[api:${name}] voie=${hasWebSession ? 'session-web' : 'private-api/aucune'}${extra ? ' | ' + extra : ''}`,
+  )
+}
+
+module.exports = { readJson, json, apiError, logRoute }

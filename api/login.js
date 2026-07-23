@@ -49,6 +49,7 @@ module.exports = async (req, res) => {
   }
 
   const ig = newClient(username)
+  console.log(`[api:login] tentative pour "${username}" (${code ? '2FA' : 'identifiants'})`)
 
   try {
     if (code && twoFactorIdentifier) {
@@ -67,8 +68,10 @@ module.exports = async (req, res) => {
     const user = await currentUserSafe(ig, username)
     clearChallenge(res)
     await persist(res, ig)
+    console.log(`[api:login] reussite pour "${username}"`)
     return json(res, 200, { user: mapUser(user) })
   } catch (e) {
+    console.warn(`[api:login] echec pour "${username}" : ${e?.name || e?.message}`)
     // --- Double authentification requise ---
     if (e?.name === 'IgLoginTwoFactorRequiredError') {
       const info = e.response?.body?.two_factor_info || {}

@@ -1,7 +1,7 @@
 // GET /api/feed[?maxId=...] — le fil d'actualite (timeline), avec pagination
 // (defilement infini) via maxId / nextMaxId.
 
-const { json, apiError } = require('./_lib/http')
+const { json, apiError, logRoute } = require('./_lib/http')
 const {
   clientFromSession,
   persist,
@@ -16,11 +16,13 @@ module.exports = async (req, res) => {
   const maxId = req.query?.maxId ? String(req.query.maxId) : undefined
 
   const sess = desktop.get()
+  logRoute('feed', Boolean(sess), `maxId=${maxId || '(premiere page)'}`)
   if (sess) {
     try {
       const { posts, hasMore, nextMaxId } = await web.feed(sess, { maxId })
       return json(res, 200, { posts, hasMore, nextMaxId })
     } catch (e) {
+      console.warn(`[api:feed] echec (${e?.code || e?.message})`)
       return apiError(res, e)
     }
   }

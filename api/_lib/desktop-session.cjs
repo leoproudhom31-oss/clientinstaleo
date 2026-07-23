@@ -38,13 +38,19 @@ function decrypt(buf) {
 }
 
 let current = null
+let loadedFromDisk = false
 
 function get() {
-  if (!current) {
+  if (!current && !loadedFromDisk) {
+    loadedFromDisk = true
     try {
       current = decrypt(fs.readFileSync(filePath()))
-    } catch {
+      console.log(
+        `[session] session rechargee depuis le disque (pk=${current?.dsUserId}, username=${current?.username || current?.user?.username || '?'})`,
+      )
+    } catch (e) {
       current = null
+      console.log(`[session] pas de session sur le disque (${e.code || e.message})`)
     }
   }
   // Une session capturee par une version anterieure a l'ajout du User-Agent
@@ -53,6 +59,7 @@ function get() {
   // l'invalide : l'app retombe en mode demo et propose une reconnexion
   // (qui recapturera une session complete).
   if (current && !current.userAgent) {
+    console.warn('[session] session sans userAgent (capturee par une version anterieure) -> invalidee')
     clear()
     return null
   }
@@ -61,10 +68,15 @@ function get() {
 
 function set(session) {
   current = { ...session, savedAt: Date.now() }
+  loadedFromDisk = true
+  console.log(
+    `[session] set() : pk=${current.dsUserId} username=${current.username || current.user?.username || '?'} ` +
+      `cookies=${(current.cookieHeader || '').split(';').length} userAgent=${current.userAgent ? 'oui' : 'NON'}`,
+  )
   try {
     fs.writeFileSync(filePath(), encrypt(current), { mode: 0o600 })
-  } catch {
-    /* si l'ecriture echoue, on garde au moins la session en memoire */
+  } catch (e) {
+    console.warn('[session] echec ecriture disque (session gardee en memoire seulement) :', e.message)
   }
   return current
 }
@@ -72,17 +84,24 @@ function set(session) {
 // Fusionne des champs dans la session courante (ex : profil recupere apres
 // coup) sans perdre les cookies/UA deja captures.
 function update(patch) {
-  if (!current) return null
+  if (!current) {
+    console.warn('[session] update() ignore : aucune session courante')
+    return null
+  }
+  console.log(`[session] update() : ${Object.keys(patch).join(', ')}`)
   return set({ ...current, ...patch })
 }
 
 function clear() {
+  const had = Boolean(current)
   current = null
+  loadedFromDisk = true
   try {
     fs.unlinkSync(filePath())
   } catch {
     /* deja absent */
   }
+  if (had) console.log('[session] clear() : session effacee')
 }
 
 module.exports = { get, set, update, clear }
