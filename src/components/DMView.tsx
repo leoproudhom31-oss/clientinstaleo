@@ -12,6 +12,7 @@ import { useStore } from '../state/store'
 import { MessageComposer } from './MessageComposer'
 import { EmptyState } from './EmptyState'
 import { Avatar } from './Avatar'
+import { PostEmbedCard } from './PostEmbedCard'
 import {
   formatMessageTime,
   formatShortTime,
@@ -71,11 +72,21 @@ function MessageRow({
           <div className="msg-text">{message.text}</div>
         )}
 
-        {Icon && (
-          <div className={`msg-meta ${message.itemType}`}>
-            <Icon size={15} />
-            <span>{message.text}</span>
+        {message.itemType === 'share' && message.embed ? (
+          <div className="msg-share-embed">
+            <div className="msg-meta share compact">
+              <Share2 size={13} />
+              <span>{message.text}</span>
+            </div>
+            <PostEmbedCard post={message.embed} showAuthor />
           </div>
+        ) : (
+          Icon && (
+            <div className={`msg-meta ${message.itemType}`}>
+              <Icon size={15} />
+              <span>{message.text}</span>
+            </div>
+          )
         )}
 
         {message.failed && (

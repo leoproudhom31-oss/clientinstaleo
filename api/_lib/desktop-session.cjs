@@ -40,11 +40,21 @@ function decrypt(buf) {
 let current = null
 
 function get() {
-  if (current) return current
-  try {
-    current = decrypt(fs.readFileSync(filePath()))
-  } catch {
-    current = null
+  if (!current) {
+    try {
+      current = decrypt(fs.readFileSync(filePath()))
+    } catch {
+      current = null
+    }
+  }
+  // Une session capturee par une version anterieure a l'ajout du User-Agent
+  // (voir web-ig.cjs) declenche systematiquement un blocage "useragent
+  // mismatch" cote Instagram. Plutot que de rester coince en silence, on
+  // l'invalide : l'app retombe en mode demo et propose une reconnexion
+  // (qui recapturera une session complete).
+  if (current && !current.userAgent) {
+    clear()
+    return null
   }
   return current
 }
@@ -59,6 +69,13 @@ function set(session) {
   return current
 }
 
+// Fusionne des champs dans la session courante (ex : profil recupere apres
+// coup) sans perdre les cookies/UA deja captures.
+function update(patch) {
+  if (!current) return null
+  return set({ ...current, ...patch })
+}
+
 function clear() {
   current = null
   try {
@@ -68,4 +85,4 @@ function clear() {
   }
 }
 
-module.exports = { get, set, clear }
+module.exports = { get, set, update, clear }
