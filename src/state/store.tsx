@@ -31,9 +31,13 @@ interface Store {
 
   feed: Post[]
   feedLoading: boolean
+  feedLoadingMore: boolean
+  refreshFeed: () => void
+  loadMoreFeed: () => void
 
   threads: ThreadPreview[]
   threadsLoading: boolean
+  refreshInbox: () => void
   activeThreadId: string | null
   activeThread: Thread | null
   threadLoading: boolean
@@ -43,6 +47,7 @@ interface Store {
   sendMessage: (text: string) => void
 
   error: string | null
+  errorCode: string | undefined
 
   membersVisible: boolean
   toggleMembers: () => void
@@ -74,6 +79,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const [feed, setFeed] = useState<Post[]>([])
   const [feedLoading, setFeedLoading] = useState(false)
+  const [feedLoadingMore, setFeedLoadingMore] = useState(false)
+  const [feedHasMore, setFeedHasMore] = useState(false)
+  const [feedNextMaxId, setFeedNextMaxId] = useState<string | null>(null)
 
   const [threads, setThreads] = useState<ThreadPreview[]>([])
   const [threadsLoading, setThreadsLoading] = useState(false)
@@ -83,6 +91,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [olderLoading, setOlderLoading] = useState(false)
 
   const [error, setError] = useState<string | null>(null)
+  const [errorCode, setErrorCode] = useState<string | undefined>(undefined)
   const [membersVisible, setMembersVisible] = useState(true)
   const [loginOpen, setLoginOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -106,27 +115,113 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   } | null>(null)
   const olderFetchRef = useRef<Promise<void> | null>(null)
 
+  // Meme principe de prefetch "d'avance" que pour l'historique des DM, mais
+  // pour la suite du fil (defilement infini vers le bas).
+  const feedBufferRef = useRef<{
+    maxId: string
+    posts: Post[]
+    hasMore: boolean
+    nextMaxId: string | null
+  } | null>(null)
+  const feedFetchRef = useRef<Promise<void> | null>(null)
+
   const loadFeed = useCallback(async (m: Mode) => {
     setFeedLoading(true)
     setError(null)
+    setErrorCode(undefined)
+    feedBufferRef.current = null
     try {
       if (m === 'demo') {
         setFeed(demoFeed)
+        setFeedHasMore(false)
+        setFeedNextMaxId(null)
       } else {
-        const { posts } = await api.feed()
+        const { posts, hasMore, nextMaxId } = await api.feed()
         setFeed(posts)
+        setFeedHasMore(hasMore)
+        setFeedNextMaxId(nextMaxId)
       }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement du fil.')
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
       setFeed([])
+      setFeedHasMore(false)
+      setFeedNextMaxId(null)
     } finally {
       setFeedLoading(false)
     }
   }, [])
 
+  const prefetchMoreFeed = useCallback((maxId: string) => {
+    if (feedFetchRef.current) return feedFetchRef.current
+    const p = api
+      .feed(maxId)
+      .then(({ posts, hasMore, nextMaxId }) => {
+        console.log(`[instaleo] fil pre-charge : ${posts.length} publications, encore plus ? ${hasMore}`)
+        feedBufferRef.current = { maxId, posts, hasMore, nextMaxId }
+      })
+      .catch((e) => {
+        console.warn('[instaleo] pre-chargement du fil echoue :', e)
+        feedBufferRef.current = null
+      })
+      .finally(() => {
+        feedFetchRef.current = null
+      })
+    feedFetchRef.current = p
+    return p
+  }, [])
+
+  // Demarre/relance le prefetch de la suite du fil des qu'on sait qu'il y en
+  // a, et qu'aucun buffer n'est deja pret pour ce point de pagination.
+  useEffect(() => {
+    if (modeRef.current !== 'live') return
+    if (!feedHasMore || !feedNextMaxId) return
+    if (feedBufferRef.current?.maxId === feedNextMaxId) return
+    prefetchMoreFeed(feedNextMaxId)
+  }, [feedHasMore, feedNextMaxId, prefetchMoreFeed])
+
+  // Appele quand le repere en bas du fil devient visible.
+  const loadMoreFeed = useCallback(() => {
+    if (modeRef.current !== 'live') return // le mode demo n'a pas de pagination serveur
+    if (!feedHasMore) return
+    const buf = feedBufferRef.current
+
+    if (buf && buf.maxId === feedNextMaxId) {
+      feedBufferRef.current = null
+      setFeed((prev) => {
+        const seen = new Set(prev.map((p) => p.id))
+        return [...prev, ...buf.posts.filter((p) => !seen.has(p.id))]
+      })
+      setFeedHasMore(buf.hasMore)
+      setFeedNextMaxId(buf.nextMaxId)
+      if (buf.hasMore && buf.nextMaxId) prefetchMoreFeed(buf.nextMaxId)
+      return
+    }
+
+    // Pas encore pret : court chargement, fusion des que le prefetch termine.
+    if (feedNextMaxId) {
+      setFeedLoadingMore(true)
+      prefetchMoreFeed(feedNextMaxId).then(() => {
+        const b = feedBufferRef.current
+        if (b) {
+          feedBufferRef.current = null
+          setFeed((prev) => {
+            const seen = new Set(prev.map((p) => p.id))
+            return [...prev, ...b.posts.filter((p) => !seen.has(p.id))]
+          })
+          setFeedHasMore(b.hasMore)
+          setFeedNextMaxId(b.nextMaxId)
+          if (b.hasMore && b.nextMaxId) prefetchMoreFeed(b.nextMaxId)
+        }
+        setFeedLoadingMore(false)
+      })
+    }
+  }, [feedHasMore, feedNextMaxId, prefetchMoreFeed])
+
   const loadInbox = useCallback(async (m: Mode) => {
     setThreadsLoading(true)
     setError(null)
+    setErrorCode(undefined)
     try {
       if (m === 'demo') {
         setThreads(demoThreadPreviews())
@@ -136,6 +231,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement des messages.')
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
       setThreads([])
     } finally {
       setThreadsLoading(false)
@@ -146,6 +242,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setActiveThreadId(id)
     setActiveThread(null)
     setThreadLoading(true)
+    setError(null)
+    setErrorCode(undefined)
     olderBufferRef.current = null
     const reqId = ++threadReq.current
     const m = modeRef.current
@@ -162,6 +260,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         if (reqId !== threadReq.current) return
         setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement de la conversation.')
+        setErrorCode(e instanceof ApiError ? e.code : undefined)
       } finally {
         if (reqId === threadReq.current) setThreadLoading(false)
       }
@@ -296,6 +395,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (space === 'direct') loadInbox(mode)
   }, [space, mode, loadFeed, loadInbox])
 
+  const refreshFeed = useCallback(() => loadFeed(modeRef.current), [loadFeed])
+  const refreshInbox = useCallback(() => loadInbox(modeRef.current), [loadInbox])
+
   // Au demarrage : detecte une session "live" existante (cookie), sinon demo.
   useEffect(() => {
     let cancelled = false
@@ -348,8 +450,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setFeedChannel,
       feed,
       feedLoading,
+      feedLoadingMore,
+      refreshFeed,
+      loadMoreFeed,
       threads,
       threadsLoading,
+      refreshInbox,
       activeThreadId,
       activeThread,
       threadLoading,
@@ -358,6 +464,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loadOlderMessages,
       sendMessage,
       error,
+      errorCode,
       membersVisible,
       toggleMembers,
       loginOpen,
@@ -369,10 +476,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       switchToDemo,
     }),
     [
-      mode, me, space, feedChannel, feed, feedLoading, threads, threadsLoading,
+      mode, me, space, feedChannel, feed, feedLoading, feedLoadingMore,
+      refreshFeed, loadMoreFeed, threads,
+      threadsLoading, refreshInbox,
       activeThreadId, activeThread, threadLoading, olderLoading, openThread,
       loadOlderMessages, sendMessage,
-      error, membersVisible, toggleMembers, loginOpen, settingsOpen,
+      error, errorCode, membersVisible, toggleMembers, loginOpen, settingsOpen,
       onLoggedIn, logout, switchToDemo,
     ],
   )

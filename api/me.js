@@ -1,12 +1,13 @@
 // GET /api/me — renvoie l'utilisateur connecte (session web Electron ou private-api).
 
-const { json, apiError } = require('./_lib/http')
+const { json, apiError, logRoute } = require('./_lib/http')
 const { clientFromSession, persist, mapUser, handleError } = require('./_lib/ig')
 const desktop = require('./_lib/desktop-session.cjs')
 const web = require('./_lib/web-ig.cjs')
 
 module.exports = async (req, res) => {
   const sess = desktop.get()
+  logRoute('me', Boolean(sess))
   if (sess) {
     try {
       const raw = await web.meRaw(sess)
@@ -19,6 +20,7 @@ module.exports = async (req, res) => {
     } catch (e) {
       // Session valide (capturee) mais le profil n'a pas charge : on ne bloque
       // PAS la connexion. On renvoie un profil minimal derive de la session.
+      console.warn(`[api:me] profil non recupere (${e?.code || e?.message}), repli minimal`)
       if (e?.code === 'expired') return apiError(res, e)
       return json(res, 200, {
         user: {

@@ -6,7 +6,9 @@ import {
   Hash,
   Heart,
   MessageSquare,
+  RefreshCw,
   ShieldCheck,
+  TriangleAlert,
   UserCircle,
   Circle,
 } from 'lucide-react'
@@ -16,6 +18,7 @@ import { Avatar } from './Avatar'
 import { UserPanel } from './UserPanel'
 import { formatRelative } from '../lib/format'
 import { useIncremental } from '../lib/useIncremental'
+import { errorHint } from '../lib/errors'
 import type { ThreadPreview } from '../types'
 
 const FEED_CHANNELS = [
@@ -59,6 +62,9 @@ export function ChannelSidebar() {
     setFeedChannel,
     threads,
     threadsLoading,
+    error,
+    errorCode,
+    refreshInbox,
   } = useStore()
   const meta = spaceMeta(space)
   const dm = useIncremental(threads, 12, 10)
@@ -110,7 +116,21 @@ export function ChannelSidebar() {
                 </span>
               </div>
             )}
-            {!threadsLoading && threads.length === 0 && (
+            {!threadsLoading && error && (
+              <div className="sidebar-error">
+                <div className="sidebar-error-msg">
+                  <TriangleAlert size={15} />
+                  <span>{error}</span>
+                </div>
+                {errorHint(errorCode) && (
+                  <p className="sidebar-error-hint">{errorHint(errorCode)}</p>
+                )}
+                <button className="sidebar-error-retry" onClick={refreshInbox}>
+                  <RefreshCw size={13} /> Reessayer
+                </button>
+              </div>
+            )}
+            {!threadsLoading && !error && threads.length === 0 && (
               <div className="channel-item" style={{ cursor: 'default' }}>
                 <span className="ci-sub">Aucune conversation</span>
               </div>

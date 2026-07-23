@@ -1,6 +1,6 @@
 // GET /api/thread?id=<thread_id> — les messages d'une conversation.
 
-const { json, apiError } = require('./_lib/http')
+const { json, apiError, logRoute } = require('./_lib/http')
 const {
   clientFromSession,
   persist,
@@ -17,11 +17,13 @@ module.exports = async (req, res) => {
   if (!id) return json(res, 400, { error: 'Parametre id manquant' })
 
   const sess = desktop.get()
+  const cursor = req.query?.cursor ? String(req.query.cursor) : undefined
+  logRoute('thread', Boolean(sess), `id=${id} cursor=${cursor || '(page recente)'}`)
   if (sess) {
     try {
-      const cursor = req.query?.cursor ? String(req.query.cursor) : undefined
       return json(res, 200, { thread: await web.thread(sess, String(id), { cursor }) })
     } catch (e) {
+      console.warn(`[api:thread] echec (${e?.code || e?.message})`)
       return apiError(res, e)
     }
   }

@@ -1,16 +1,18 @@
 // GET /api/profile — les publications du compte connecte (grille du profil).
 
-const { json, apiError } = require('./_lib/http')
+const { json, apiError, logRoute } = require('./_lib/http')
 const { clientFromSession, persist, mapPost, handleError } = require('./_lib/ig')
 const desktop = require('./_lib/desktop-session.cjs')
 const web = require('./_lib/web-ig.cjs')
 
 module.exports = async (req, res) => {
   const sess = desktop.get()
+  logRoute('profile', Boolean(sess))
   if (sess) {
     try {
       return json(res, 200, { posts: await web.userFeed(sess, sess.dsUserId) })
     } catch (e) {
+      console.warn(`[api:profile] echec (${e?.code || e?.message})`)
       return apiError(res, e)
     }
   }

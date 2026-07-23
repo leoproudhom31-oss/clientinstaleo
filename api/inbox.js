@@ -1,6 +1,6 @@
 // GET /api/inbox — la liste des conversations privees (Direct).
 
-const { json, apiError } = require('./_lib/http')
+const { json, apiError, logRoute } = require('./_lib/http')
 const {
   clientFromSession,
   persist,
@@ -12,10 +12,12 @@ const web = require('./_lib/web-ig.cjs')
 
 module.exports = async (req, res) => {
   const sess = desktop.get()
+  logRoute('inbox', Boolean(sess))
   if (sess) {
     try {
       return json(res, 200, { threads: await web.inbox(sess) })
     } catch (e) {
+      console.warn(`[api:inbox] echec (${e?.code || e?.message})`)
       return apiError(res, e)
     }
   }

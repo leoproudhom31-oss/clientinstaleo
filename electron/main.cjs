@@ -62,6 +62,9 @@ async function captureSession(ses, webContents) {
   const sessionid = value('sessionid')
   const dsUserId = value('ds_user_id')
   if (!sessionid || !dsUserId) return null
+  console.log(
+    `[ig-login] cookies captures : [${cookies.map((c) => c.name).join(', ')}] | UA=${webContents.getUserAgent().slice(0, 60)}…`,
+  )
   return {
     sessionid,
     dsUserId,
@@ -150,6 +153,7 @@ async function fetchViewerWithRetries(webContents, attempts = 5, delayMs = 900) 
 // Ouvre la vraie page de connexion Instagram et capture la session une fois
 // l'utilisateur connecte.
 ipcMain.handle('ig-login', async () => {
+  console.log('[ig-login] ouverture de la fenetre de connexion Instagram')
   return await new Promise((resolve) => {
     const authWin = new BrowserWindow({
       width: 540,
@@ -187,6 +191,7 @@ ipcMain.handle('ig-login', async () => {
         )
       }
       desktop.set(s)
+      console.log('[ig-login] session complete, fenetre fermee')
       if (!authWin.isDestroyed()) authWin.close()
       resolve({ ok: true })
     }
@@ -195,12 +200,18 @@ ipcMain.handle('ig-login', async () => {
     // navigation : on verifie aussi periodiquement.
     const poll = setInterval(tryCapture, 1500)
 
-    authWin.webContents.on('did-navigate', tryCapture)
+    authWin.webContents.on('did-navigate', (_e, url) => {
+      console.log(`[ig-login] navigation -> ${url.slice(0, 100)}`)
+      tryCapture()
+    })
     authWin.webContents.on('did-frame-navigate', tryCapture)
     authWin.webContents.on('did-finish-load', tryCapture)
     authWin.on('closed', () => {
       clearInterval(poll)
-      if (!done) resolve({ ok: false, cancelled: true })
+      if (!done) {
+        console.log('[ig-login] fenetre fermee sans session capturee (annule ?)')
+        resolve({ ok: false, cancelled: true })
+      }
     })
 
     authWin.loadURL('https://www.instagram.com/accounts/login/')
@@ -208,6 +219,7 @@ ipcMain.handle('ig-login', async () => {
 })
 
 ipcMain.handle('ig-logout', async () => {
+  console.log('[ig-login] deconnexion demandee')
   desktop.clear()
   try {
     await session.fromPartition(IG_PARTITION).clearStorageData()
@@ -217,7 +229,10 @@ ipcMain.handle('ig-logout', async () => {
   return { ok: true }
 })
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  console.log('[instaleo] application prete, ouverture de la fenetre principale')
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

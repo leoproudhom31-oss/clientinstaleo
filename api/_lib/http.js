@@ -30,12 +30,29 @@ function json(res, status, payload) {
 // Traduit une erreur { code } (voie session web) en reponse HTTP.
 function apiError(res, e) {
   const code = e?.code
-  const status =
-    code === 'expired' || code === 'checkpoint' || code === 'ua_mismatch' ? 401 : 502
+  let status = 502
+  if (
+    code === 'expired' ||
+    code === 'checkpoint' ||
+    code === 'ua_mismatch' ||
+    code === 'redirect_loop'
+  )
+    status = 401
+  else if (code === 'network') status = 503 // upstream injoignable, pas un rejet applicatif
   return json(res, status, {
     error: e?.message || 'Erreur cote Instagram.',
     code: code || 'error',
   })
 }
 
-module.exports = { readJson, json, apiError }
+// Log uniforme en entree de chaque endpoint : quelle voie est utilisee
+// (session web capturee par Electron, ou repli instagram-private-api) et
+// avec quelle identite. Aide a savoir d'un coup d'oeil pourquoi un appel
+// prend tel ou tel chemin.
+function logRoute(name, hasWebSession, extra = '') {
+  console.log(
+    `[api:${name}] voie=${hasWebSession ? 'session-web' : 'private-api/aucune'}${extra ? ' | ' + extra : ''}`,
+  )
+}
+
+module.exports = { readJson, json, apiError, logRoute }

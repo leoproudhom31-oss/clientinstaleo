@@ -1,6 +1,7 @@
-// GET /api/feed — le fil d'actualite (timeline) mappe en "publications".
+// GET /api/feed[?maxId=...] — le fil d'actualite (timeline), avec pagination
+// (defilement infini) via maxId / nextMaxId.
 
-const { json, apiError } = require('./_lib/http')
+const { json, apiError, logRoute } = require('./_lib/http')
 const {
   clientFromSession,
   persist,
@@ -12,11 +13,16 @@ const desktop = require('./_lib/desktop-session.cjs')
 const web = require('./_lib/web-ig.cjs')
 
 module.exports = async (req, res) => {
+  const maxId = req.query?.maxId ? String(req.query.maxId) : undefined
+
   const sess = desktop.get()
+  logRoute('feed', Boolean(sess), `maxId=${maxId || '(premiere page)'}`)
   if (sess) {
     try {
-      return json(res, 200, { posts: await web.feed(sess) })
+      const { posts, hasMore, nextMaxId } = await web.feed(sess, { maxId })
+      return json(res, 200, { posts, hasMore, nextMaxId })
     } catch (e) {
+      console.warn(`[api:feed] echec (${e?.code || e?.message})`)
       return apiError(res, e)
     }
   }
@@ -28,7 +34,7 @@ module.exports = async (req, res) => {
     const items = await feed.items()
     const posts = items.map(extractMedia).filter(Boolean).map(mapPost)
     await persist(res, ig)
-    return json(res, 200, { posts })
+    return json(res, 200, { posts, hasMore: false, nextMaxId: null })
   } catch (e) {
     return handleError(res, e)
   }

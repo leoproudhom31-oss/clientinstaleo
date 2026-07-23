@@ -1,7 +1,7 @@
 // POST /api/send — envoie un message texte dans une conversation.
 // Corps : { threadId, text }
 
-const { readJson, json, apiError } = require('./_lib/http')
+const { readJson, json, apiError, logRoute } = require('./_lib/http')
 const { clientFromSession, persist, handleError } = require('./_lib/ig')
 const desktop = require('./_lib/desktop-session.cjs')
 const web = require('./_lib/web-ig.cjs')
@@ -18,10 +18,12 @@ module.exports = async (req, res) => {
   }
 
   const sess = desktop.get()
+  logRoute('send', Boolean(sess), `threadId=${threadId} longueur=${text.length}`)
   if (sess) {
     try {
       return json(res, 200, { message: await web.send(sess, String(threadId), text) })
     } catch (e) {
+      console.warn(`[api:send] echec (${e?.code || e?.message})`)
       return apiError(res, e)
     }
   }
