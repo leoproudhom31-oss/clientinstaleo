@@ -44,6 +44,41 @@ function extractMedia(feedItem) {
   return m
 }
 
+// Extrait le media video/reel d'un element du fil (pour l'onglet Reels), qu'il
+// soit direct (media_or_ad) ou injecte comme suggestion (explore_story). Le fil
+// timeline contient deja des reels ; on ne garde que les videos/clips.
+function extractClip(feedItem) {
+  const m =
+    feedItem?.media_or_ad ||
+    feedItem?.explore_story?.media_or_ad ||
+    feedItem?.explore_story?.media ||
+    feedItem?.media
+  if (!m || !m.user || m.taken_at == null) return null
+  const isClip =
+    m.product_type === 'clips' ||
+    m.media_type === 2 ||
+    (Array.isArray(m.video_versions) && m.video_versions.length > 0)
+  return isClip ? m : null
+}
+
+// Profil complet renvoye par web_profile_info (bio + compteurs), forme
+// GraphQL differente du reste de l'API (edge_followed_by.count, etc.).
+function mapProfile(u) {
+  if (!u) return null
+  return {
+    pk: String(u.id ?? u.pk ?? u.pk_id ?? ''),
+    username: u.username ?? '',
+    fullName: u.full_name ?? '',
+    avatarUrl: imgProxy(u.profile_pic_url_hd || u.profile_pic_url),
+    isVerified: !!u.is_verified,
+    isPrivate: !!u.is_private,
+    biography: u.biography ?? '',
+    followerCount: Number(u.edge_followed_by?.count ?? u.follower_count ?? 0),
+    followingCount: Number(u.edge_follow?.count ?? u.following_count ?? 0),
+    postCount: Number(u.edge_owner_to_timeline_media?.count ?? u.media_count ?? 0),
+  }
+}
+
 function mapPost(item) {
   return {
     id: String(item.id ?? item.pk ?? item.code ?? Math.random()),
@@ -292,6 +327,8 @@ module.exports = {
   mapStoryItem,
   mapStoryTray,
   mapReel,
+  extractClip,
+  mapProfile,
   tsSeconds,
   MEDIA_TYPES,
   SHARE_TYPES,

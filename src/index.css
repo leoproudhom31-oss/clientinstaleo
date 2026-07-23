@@ -1473,3 +1473,214 @@ a:hover {
 .reel-link:hover {
   text-decoration: underline;
 }
+
+/* ------------------------------------------------------- Profils cliquables */
+.clickable {
+  cursor: pointer;
+}
+.msg-author.clickable:hover,
+.reel-author.clickable:hover .reel-author-name {
+  text-decoration: underline;
+}
+.member-row.clickable:hover {
+  background: var(--bg-modifier-hover, rgba(255, 255, 255, 0.04));
+  border-radius: 6px;
+}
+
+/* Fiche profil (popout facon Discord) */
+.profile-popout {
+  position: relative;
+  width: min(440px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--bg-floating, #232428);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+.profile-popout-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  color: #fff;
+}
+.profile-banner {
+  height: 96px;
+  background: linear-gradient(90deg, #5865f2, #cc2366 70%, #f09433);
+  border-radius: 12px 12px 0 0;
+}
+.profile-popout-body {
+  padding: 0 18px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.profile-popout-avatar {
+  margin-top: -44px;
+}
+.profile-popout-avatar .avatar-wrap {
+  border: 6px solid var(--bg-floating, #232428);
+  border-radius: 50%;
+}
+.profile-popout-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.pp-fullname {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--header-primary);
+}
+.pp-username {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 2px;
+}
+.pp-private {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--bg-input, #1e1f22);
+  color: var(--text-muted);
+}
+.pp-card {
+  width: 100%;
+  background: var(--bg-secondary-alt, #2b2d31);
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 14px;
+}
+.pp-stats,
+.profile-stats {
+  display: flex;
+  gap: 20px;
+}
+.pp-stats > div {
+  display: flex;
+  flex-direction: column;
+}
+.pp-stats strong {
+  color: var(--header-primary);
+  font-size: 16px;
+}
+.pp-stats span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.pp-section {
+  margin-top: 14px;
+}
+.pp-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.pp-bio {
+  margin: 0;
+  color: var(--text-normal, #dbdee1);
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.pp-ig-btn {
+  width: 100%;
+  margin-top: 14px;
+}
+.pp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.pp-grid img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--bg-sidebar, #2b2d31);
+}
+.pp-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+/* Page profil (mon compte) revue */
+.profile-hero {
+  display: flex;
+  gap: 26px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.profile-hero-info {
+  flex: 1;
+  min-width: 240px;
+}
+.profile-hero-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.profile-hero-name h1 {
+  margin: 0;
+  font-size: 26px;
+  color: var(--header-primary);
+}
+.profile-stats {
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.profile-stats strong {
+  color: var(--header-primary);
+}
+.profile-fullname {
+  margin-top: 12px;
+  font-weight: 600;
+  color: var(--text-normal, #dbdee1);
+}
+.profile-bio {
+  margin: 4px 0 0;
+  color: var(--text-normal, #dbdee1);
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.profile-grid-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 28px 0 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 700;
+}
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+.profile-grid img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--bg-sidebar, #2b2d31);
+}

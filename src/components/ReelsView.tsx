@@ -8,6 +8,7 @@ import { formatCount } from '../lib/format'
 import { errorHint } from '../lib/errors'
 
 function ReelCard({ reel }: { reel: Reel }) {
+  const { openUserProfile } = useStore()
   const [playing, setPlaying] = useState(false)
 
   return (
@@ -42,7 +43,11 @@ function ReelCard({ reel }: { reel: Reel }) {
       </div>
 
       <div className="reel-info">
-        <div className="reel-author">
+        <div
+          className="reel-author clickable"
+          onClick={() => openUserProfile(reel.author)}
+          title={`Voir le profil de ${reel.author.username}`}
+        >
           <Avatar user={reel.author} size={30} />
           <span className="reel-author-name">{reel.author.username}</span>
         </div>

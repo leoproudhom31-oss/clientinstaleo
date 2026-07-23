@@ -281,12 +281,42 @@ async function me(session) {
   return map.mapUser(await meRaw(session))
 }
 
-// Publications d'un utilisateur (par defaut, le compte connecte).
-async function userFeed(session, userId, count = 12) {
+// Publications d'un utilisateur (par defaut, le compte connecte), paginees via
+// max_id/next_max_id (comme le fil). Renvoie { posts, hasMore, nextMaxId }.
+async function userFeed(session, userId, { maxId, count = 12 } = {}) {
   const id = userId || session.dsUserId
-  const data = await webRequest(session, `/api/v1/feed/user/${id}/?count=${count}`)
+  let url = `/api/v1/feed/user/${id}/?count=${count}`
+  if (maxId) url += `&max_id=${encodeURIComponent(maxId)}`
+  const data = await webRequest(session, url)
   const items = data.items || []
-  return items.map(map.mapPost)
+  console.log(
+    `[web-ig] userFeed(${id}) : ${items.length} publications | hasMore=${Boolean(data.more_available)}`,
+  )
+  return {
+    posts: items.map(map.mapPost),
+    hasMore: Boolean(data.more_available),
+    nextMaxId: data.next_max_id || null,
+  }
+}
+
+// Profil complet d'un compte (bio, compteurs, avatar HD) via l'endpoint web
+// utilise par les pages de profil instagram.com.
+async function userInfo(session, username) {
+  const data = await webRequest(
+    session,
+    `/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
+    { referer: `${BASE}/${encodeURIComponent(username)}/` },
+  )
+  const u = data?.data?.user
+  if (!u) {
+    const e = new Error('Profil Instagram introuvable.')
+    e.code = 'not_found'
+    throw e
+  }
+  console.log(
+    `[web-ig] userInfo(${username}) : pk=${u.id} abonnes=${u.edge_followed_by?.count} publications=${u.edge_owner_to_timeline_media?.count} prive=${!!u.is_private}`,
+  )
+  return map.mapProfile(u)
 }
 
 // maxId (renvoye par Instagram sous next_max_id) permet de demander la suite
@@ -345,21 +375,24 @@ async function storyReel(session, reelId) {
   return items.map(map.mapStoryItem)
 }
 
-// Fil des reels (onglet Reels). POST clips/home, paginé via paging_info.max_id.
+// Fil des reels (onglet Reels). L'endpoint clips/home n'existe pas cote WEB
+// (404) ; en revanche le fil timeline contient DEJA des reels (suggestions
+// clips). On reutilise donc cet endpoint EPROUVE et on n'en garde que les
+// videos/clips — pagination identique au fil (next_max_id).
 async function reels(session, { maxId } = {}) {
-  const form = { container_module: 'clips_viewer_clips_tab' }
-  if (maxId) form.max_id = maxId
-  const data = await webRequest(session, '/api/v1/clips/home/', { method: 'POST', form })
-  const items = data.items || data.reels_media || data.clips || []
-  const list = items.map(map.mapReel).filter(Boolean)
-  const paging = data.paging_info || {}
+  const form = maxId
+    ? { reason: 'pagination', max_id: maxId, is_pull_to_refresh: '0' }
+    : { reason: 'cold_start_fetch', is_pull_to_refresh: '0' }
+  const data = await webRequest(session, '/api/v1/feed/timeline/', { method: 'POST', form })
+  const items = data.feed_items || data.items || []
+  const list = items.map(map.extractClip).filter(Boolean).map(map.mapReel).filter(Boolean)
   console.log(
-    `[web-ig] reels() : ${items.length} elements bruts -> ${list.length} reels | hasMore=${Boolean(paging.more_available)}`,
+    `[web-ig] reels() : ${items.length} elements bruts -> ${list.length} reels | hasMore=${Boolean(data.more_available)}`,
   )
   return {
     reels: list,
-    hasMore: Boolean(paging.more_available),
-    nextMaxId: paging.max_id || null,
+    hasMore: Boolean(data.more_available),
+    nextMaxId: data.next_max_id || null,
   }
 }
 
@@ -508,6 +541,7 @@ module.exports = {
   thread,
   send,
   userFeed,
+  userInfo,
   stories,
   storyReel,
   reels,

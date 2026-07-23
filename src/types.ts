@@ -7,6 +7,11 @@ export interface User {
   avatarUrl: string | null
   isVerified?: boolean
   isPrivate?: boolean
+  /** Champs enrichis (fiche profil complete via web_profile_info). */
+  biography?: string
+  followerCount?: number
+  followingCount?: number
+  postCount?: number
 }
 
 export interface Post {

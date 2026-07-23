@@ -111,8 +111,28 @@ export const api = {
     return call<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }>(`feed${qs}`)
   },
 
-  profile(): Promise<{ posts: Post[] }> {
-    return call<{ posts: Post[] }>('profile')
+  profile(
+    maxId?: string,
+  ): Promise<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }> {
+    const qs = maxId ? `?maxId=${encodeURIComponent(maxId)}` : ''
+    return call<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }>(`profile${qs}`)
+  },
+
+  // Fiche d'un compte quelconque (bio, compteurs) + 1re page de ses posts.
+  user(
+    username: string,
+  ): Promise<{ user: User; posts: Post[]; hasMore: boolean; nextMaxId: string | null }> {
+    return call(`user?username=${encodeURIComponent(username)}`)
+  },
+
+  // Publications suivantes d'un profil (pagination).
+  userPosts(
+    userId: string,
+    maxId?: string,
+  ): Promise<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }> {
+    const qs = new URLSearchParams({ userId })
+    if (maxId) qs.set('maxId', maxId)
+    return call(`user?${qs.toString()}`)
   },
 
   reels(maxId?: string): Promise<{ reels: Reel[]; hasMore: boolean; nextMaxId: string | null }> {

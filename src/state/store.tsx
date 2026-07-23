@@ -85,6 +85,11 @@ interface Store {
   settingsOpen: boolean
   setSettingsOpen: (v: boolean) => void
 
+  // Fiche profil (popout facon Discord) : compte actuellement affiche.
+  profileUser: User | null
+  openUserProfile: (user: User) => void
+  closeUserProfile: () => void
+
   onLoggedIn: (user: User) => void
   logout: () => void
   switchToDemo: () => void
@@ -138,8 +143,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [membersVisible, setMembersVisible] = useState(true)
   const [loginOpen, setLoginOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [profileUser, setProfileUser] = useState<User | null>(null)
 
   const toggleMembers = useCallback(() => setMembersVisible((v) => !v), [])
+  const openUserProfile = useCallback((user: User) => setProfileUser(user), [])
+  const closeUserProfile = useCallback(() => setProfileUser(null), [])
 
   // Evite les courses : on ignore les reponses tardives d'un thread abandonne.
   const threadReq = useRef(0)
@@ -656,6 +664,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setLoginOpen,
       settingsOpen,
       setSettingsOpen,
+      profileUser,
+      openUserProfile,
+      closeUserProfile,
       onLoggedIn,
       logout,
       switchToDemo,
@@ -669,6 +680,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeThreadId, activeThread, threadLoading, olderLoading, openThread,
       loadOlderMessages, sendMessage,
       error, errorCode, membersVisible, toggleMembers, loginOpen, settingsOpen,
+      profileUser, openUserProfile, closeUserProfile,
       onLoggedIn, logout, switchToDemo,
     ],
   )

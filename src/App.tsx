@@ -21,6 +21,7 @@ import { EmptyState } from './components/EmptyState'
 import { MainHeader } from './components/MainHeader'
 import { LoginModal } from './components/LoginModal'
 import { SettingsModal } from './components/SettingsModal'
+import { UserProfileModal } from './components/UserProfileModal'
 
 const FEED_LABELS: Record<string, string> = {
   accueil: 'accueil',
@@ -130,6 +131,7 @@ function Shell() {
       <Workspace />
       <LoginModal />
       <SettingsModal />
+      <UserProfileModal />
     </div>
   )
 }
