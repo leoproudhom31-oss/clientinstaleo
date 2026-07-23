@@ -18,6 +18,55 @@ const desktop = require(path.join(__dirname, '..', 'api', '_lib', 'desktop-sessi
 const IG_PARTITION = 'persist:instagram'
 let mainWindow = null
 
+// En-tetes de securite qu'Instagram exige sur ses requetes d'ecriture (envoi de
+// message...). Les LECTURES passent avec les seuls cookies + X-IG-App-ID, mais
+// les ECRITURES sont renvoyees vers /accounts/login si ces en-tetes manquent —
+// Instagram considere alors la requete comme non authentifiee et SUPPRIME le
+// cookie sessionid dans sa reponse. Plutot que de deviner leurs valeurs (elles
+// changent a chaque deploiement d'Instagram : X-ASBD-ID, hash X-Instagram-AJAX,
+// identifiant X-Web-Session-ID...), on INTERCEPTE ceux que la vraie page envoie
+// et on les rejoue tels quels sur nos appels serveur.
+const IG_HEADER_ALLOWLIST = new Set([
+  'x-ig-app-id',
+  'x-asbd-id',
+  'x-instagram-ajax',
+  'x-web-session-id',
+  'x-ig-www-claim',
+  'x-bloks-version-id',
+])
+let capturedIgHeaders = {}
+
+// Installe l'ecoute des requetes de la page Instagram : chaque appel que la page
+// fait vers son API interne (/api/...) porte les en-tetes de securite a jour ;
+// on retient les derniers vus. A poser AVANT toute navigation.
+function setupIgHeaderCapture() {
+  try {
+    const igSession = session.fromPartition(IG_PARTITION)
+    igSession.webRequest.onBeforeSendHeaders(
+      { urls: ['*://*.instagram.com/api/*', '*://i.instagram.com/*'] },
+      (details, callback) => {
+        let changed = false
+        for (const [name, value] of Object.entries(details.requestHeaders || {})) {
+          const key = name.toLowerCase()
+          if (IG_HEADER_ALLOWLIST.has(key) && value && capturedIgHeaders[key] !== value) {
+            capturedIgHeaders[key] = value
+            changed = true
+          }
+        }
+        if (changed) {
+          console.log(
+            `[ig-headers] en-tetes captures depuis la page : [${Object.keys(capturedIgHeaders).join(', ')}]`,
+          )
+        }
+        callback({ requestHeaders: details.requestHeaders })
+      },
+    )
+    console.log('[ig-headers] interception des en-tetes Instagram active')
+  } catch (e) {
+    console.warn('[ig-headers] impossible d’activer l’interception :', e?.message || e)
+  }
+}
+
 async function createWindow() {
   const server = await start(0) // port libre aleatoire
   const { port } = server.address()
@@ -65,6 +114,10 @@ async function captureSession(ses, webContents) {
   console.log(
     `[ig-login] cookies captures : [${cookies.map((c) => c.name).join(', ')}] | UA=${webContents.getUserAgent().slice(0, 60)}…`,
   )
+  const igHeaders = { ...capturedIgHeaders }
+  console.log(
+    `[ig-login] en-tetes de securite rejoues : [${Object.keys(igHeaders).join(', ') || 'aucun (la page n’a pas encore appele l’API)'}]`,
+  )
   return {
     sessionid,
     dsUserId,
@@ -72,6 +125,8 @@ async function captureSession(ses, webContents) {
     username: value('ds_user') || '', // Instagram expose parfois le pseudo ici
     cookieHeader: cookies.map((c) => `${c.name}=${c.value}`).join('; '),
     userAgent: webContents.getUserAgent(),
+    // En-tetes d'ecriture interceptes sur la vraie page (voir setupIgHeaderCapture).
+    igHeaders,
   }
 }
 
@@ -190,6 +245,14 @@ ipcMain.handle('ig-login', async () => {
           ')',
         )
       }
+      // Les en-tetes d'ecriture n'arrivent parfois qu'apres le chargement du
+      // feed (Instagram appelle son API en differe). L'attente du profil
+      // ci-dessus a laisse le temps a ces appels de partir : on re-capture donc
+      // ici pour prendre le jeu d'en-tetes le plus complet.
+      s.igHeaders = { ...capturedIgHeaders }
+      console.log(
+        `[ig-login] en-tetes finaux enregistres : [${Object.keys(s.igHeaders).join(', ') || 'aucun'}]`,
+      )
       desktop.set(s)
       console.log('[ig-login] session complete, fenetre fermee')
       if (!authWin.isDestroyed()) authWin.close()
@@ -231,6 +294,7 @@ ipcMain.handle('ig-logout', async () => {
 
 app.whenReady().then(() => {
   console.log('[instaleo] application prete, ouverture de la fenetre principale')
+  setupIgHeaderCapture()
   createWindow()
 })
 

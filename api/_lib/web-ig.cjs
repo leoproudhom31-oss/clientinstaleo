@@ -115,6 +115,10 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } 
     const h = {
       'User-Agent': session.userAgent || FALLBACK_UA,
       'X-IG-App-ID': APP_ID,
+      // ID anti-scraping qu'Instagram exige sur ses requetes. Valeur par defaut
+      // au cas ou la capture (voir plus bas) n'aurait rien recupere ; elle sera
+      // ecrasee par la vraie valeur de la page si on l'a interceptee.
+      'X-ASBD-ID': '129477',
       'X-CSRFToken': session.csrftoken || '',
       'X-Requested-With': 'XMLHttpRequest',
       // Instagram emet ce "claim" apres chaque requete et attend qu'on le
@@ -130,6 +134,18 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } 
       Origin: BASE,
       Cookie: session.cookieHeader,
       Accept: '*/*',
+    }
+    // Rejoue les en-tetes de securite interceptes sur la VRAIE page Instagram
+    // (X-ASBD-ID, X-Instagram-AJAX, X-Web-Session-ID, X-Bloks-Version-Id...).
+    // Les LECTURES passent sans eux, mais les ECRITURES (envoi de message) sont
+    // renvoyees vers /accounts/login sans ce jeu d'en-tetes complet. On saute
+    // csrftoken et www-claim : ils sont geres dynamiquement ci-dessus (leur
+    // valeur evolue au fil des requetes et des redirections).
+    const managed = new Set(['x-csrftoken', 'x-ig-www-claim'])
+    const canonical = { 'x-ig-app-id': 'X-IG-App-ID', 'x-asbd-id': 'X-ASBD-ID' }
+    for (const [k, v] of Object.entries(session.igHeaders || {})) {
+      if (!v || managed.has(k)) continue
+      h[canonical[k] || k] = v
     }
     if (form) h['Content-Type'] = 'application/x-www-form-urlencoded'
     return h
