@@ -1,8 +1,9 @@
-import { BadgeCheck, ExternalLink, Heart, MessageCircle } from 'lucide-react'
+import { BadgeCheck, ExternalLink, Heart, Maximize2, MessageCircle } from 'lucide-react'
 import type { Post } from '../types'
 import { Avatar } from './Avatar'
 import { generatePostImage } from '../lib/avatars'
 import { formatCount } from '../lib/format'
+import { useStore } from '../state/store'
 
 interface Props {
   post: Post
@@ -16,7 +17,11 @@ interface Props {
 // partagees en messages prives. Le clic ouvre la vraie publication sur
 // Instagram dans le navigateur par defaut (via le lien permanent /p/<code>/).
 export function PostEmbedCard({ post, showAuthor = false }: Props) {
+  const { openPost, mode } = useStore()
   const img = post.imageUrl ?? generatePostImage(post.id + post.author.username)
+  // En mode connecte, le clic ouvre le detail DANS l'app (image, j'aime,
+  // commentaires) plutot que de partir sur instagram.com.
+  const canDetail = mode === 'live'
 
   return (
     <div className="post-embed">
@@ -30,7 +35,23 @@ export function PostEmbedCard({ post, showAuthor = false }: Props) {
         </div>
       )}
 
-      {post.permalink ? (
+      {canDetail ? (
+        <button
+          className="pe-media-link"
+          onClick={() => openPost(post.id)}
+          title="Voir le detail"
+        >
+          <img
+            className="pe-media"
+            src={img}
+            alt={`Publication de ${post.author.username}`}
+            loading="lazy"
+          />
+          <span className="pe-open-overlay">
+            <Maximize2 size={14} /> Voir le detail
+          </span>
+        </button>
+      ) : post.permalink ? (
         <a
           className="pe-media-link"
           href={post.permalink}

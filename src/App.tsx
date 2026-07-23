@@ -23,6 +23,7 @@ import { MainHeader } from './components/MainHeader'
 import { LoginModal } from './components/LoginModal'
 import { SettingsModal } from './components/SettingsModal'
 import { UserProfileModal } from './components/UserProfileModal'
+import { PostDetailModal } from './components/PostDetailModal'
 
 const FEED_LABELS: Record<string, string> = {
   accueil: 'accueil',
@@ -120,6 +121,7 @@ function Shell() {
       <LoginModal />
       <SettingsModal />
       <UserProfileModal />
+      <PostDetailModal />
     </div>
   )
 }

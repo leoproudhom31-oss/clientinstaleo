@@ -298,6 +298,31 @@ function mapStoryTray(tray) {
   }
 }
 
+// Un commentaire sous une publication.
+function mapComment(c) {
+  return {
+    id: String(c.pk ?? c.id ?? Math.random()),
+    user: mapUser(c.user),
+    text: c.text ?? '',
+    createdAt: Number(c.created_at ?? c.created_at_utc) || 0,
+    likeCount: Number(c.comment_like_count) || 0,
+  }
+}
+
+// Une story a la une (highlight) : couverture + titre.
+function mapHighlight(node) {
+  const cover =
+    node.cover_media?.cropped_image_version?.url ||
+    node.cover_media?.image_versions2?.candidates?.[0]?.url ||
+    firstImage(node.cover_media)
+  return {
+    // ex: "highlight:1780..." — a repasser tel quel a reels_media.
+    id: String(node.id ?? ''),
+    title: node.title ?? 'A la une',
+    cover: imgProxy(cover),
+  }
+}
+
 // Une entree du fil d'activite (news/inbox) : j'aime, commentaire, abonnement.
 // Instagram fournit le texte deja localise dans args.text.
 function mapNotification(story) {
@@ -345,6 +370,8 @@ module.exports = {
   extractClip,
   mapProfile,
   mapNotification,
+  mapComment,
+  mapHighlight,
   tsSeconds,
   MEDIA_TYPES,
   SHARE_TYPES,

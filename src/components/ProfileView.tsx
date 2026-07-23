@@ -8,7 +8,7 @@ import { formatCount } from '../lib/format'
 import type { Post, User } from '../types'
 
 export function ProfileView() {
-  const { me, mode, setLoginOpen, setSettingsOpen } = useStore()
+  const { me, mode, setLoginOpen, setSettingsOpen, openPost } = useStore()
   const [profile, setProfile] = useState<User>(me)
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(false)
@@ -187,13 +187,18 @@ export function ProfileView() {
 
           <div className="profile-grid">
             {posts.map((post, i) => (
-              <img
+              <button
                 key={post.id}
-                src={post.imageUrl ?? generatePostImage(`${profile.username}-${post.id}-${i}`)}
-                alt={post.caption ? post.caption.slice(0, 40) : ''}
-                title={post.caption || undefined}
-                loading="lazy"
-              />
+                className="profile-grid-item"
+                onClick={() => mode === 'live' && openPost(post.id)}
+                title={post.caption || 'Voir la publication'}
+              >
+                <img
+                  src={post.imageUrl ?? generatePostImage(`${profile.username}-${post.id}-${i}`)}
+                  alt={post.caption ? post.caption.slice(0, 40) : ''}
+                  loading="lazy"
+                />
+              </button>
             ))}
           </div>
 

@@ -459,13 +459,61 @@ async function explore(session, { maxId } = {}) {
 
 // Fil d'activite (j'aime, commentaires, abonnements) via news/inbox.
 async function notifications(session) {
-  const data = await webRequest(session, '/api/v1/news/inbox/')
+  const data = await webRequest(session, '/api/v1/news/inbox/?mark_as_seen=false')
   const stories = [...(data.new_stories || []), ...(data.old_stories || [])]
   const list = stories
     .map(map.mapNotification)
     .filter((n) => n.text)
     .sort((a, b) => b.timestamp - a.timestamp)
   console.log(`[web-ig] notifications() : ${stories.length} entrees -> ${list.length} affichees`)
+  return list
+}
+
+// Detail complet d'une publication (media/info).
+async function postInfo(session, mediaId) {
+  const data = await webRequest(session, `/api/v1/media/${encodeURIComponent(mediaId)}/info/`)
+  const item = (data.items || [])[0]
+  if (!item) {
+    const e = new Error('Publication introuvable.')
+    e.code = 'not_found'
+    throw e
+  }
+  return map.mapPost(item)
+}
+
+// Comptes ayant aime une publication.
+async function likers(session, mediaId) {
+  const data = await webRequest(session, `/api/v1/media/${encodeURIComponent(mediaId)}/likers/`)
+  const users = (data.users || []).map(map.mapUser)
+  console.log(`[web-ig] likers(${mediaId}) : ${users.length} comptes`)
+  return users
+}
+
+// Commentaires d'une publication (page la plus pertinente).
+async function comments(session, mediaId, { minId } = {}) {
+  let url =
+    `/api/v1/media/${encodeURIComponent(mediaId)}/comments/` +
+    '?can_support_threading=true&permalink_enabled=false'
+  if (minId) url += `&min_id=${encodeURIComponent(minId)}`
+  const data = await webRequest(session, url)
+  const list = (data.comments || []).map(map.mapComment)
+  console.log(`[web-ig] comments(${mediaId}) : ${list.length} commentaires`)
+  return {
+    comments: list,
+    hasMore: Boolean(data.has_more_comments),
+    nextMinId: data.next_min_id || null,
+  }
+}
+
+// Stories a la une (highlights) d'un compte.
+async function highlights(session, userId) {
+  const data = await webRequest(
+    session,
+    `/api/v1/highlights/${encodeURIComponent(userId)}/highlights_tray/`,
+  )
+  const tray = data.tray || []
+  const list = tray.map(map.mapHighlight).filter((h) => h.id)
+  console.log(`[web-ig] highlights(${userId}) : ${list.length} a la une`)
   return list
 }
 
@@ -601,4 +649,8 @@ module.exports = {
   saved,
   explore,
   notifications,
+  postInfo,
+  likers,
+  comments,
+  highlights,
 }

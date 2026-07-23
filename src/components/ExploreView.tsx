@@ -10,28 +10,33 @@ export function ExploreView() {
     exploreLoading,
     exploreLoadingMore,
     loadMoreExplore,
-    openUserProfile,
+    openPost,
     error,
     errorCode,
     mode,
   } = useStore()
   const containerRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
+  // Plafond pour eviter que la grille ne grossisse a l'infini (et ne lague) :
+  // au-dela, on arrete le chargement automatique.
+  const CAP = 300
+  const atCap = explore.length >= CAP
 
   useEffect(() => {
-    if (mode !== 'live') return
+    if (mode !== 'live' || atCap) return
     const el = sentinelRef.current
     const root = containerRef.current
     if (!el || !root) return
+    // Marge reduite : on ne precharge qu'une page a la fois, pas dix d'un coup.
     const io = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) loadMoreExplore()
       },
-      { root, rootMargin: '1000px' },
+      { root, rootMargin: '300px' },
     )
     io.observe(el)
     return () => io.disconnect()
-  }, [mode, loadMoreExplore, explore.length])
+  }, [mode, loadMoreExplore, explore.length, atCap])
 
   return (
     <div className="content">
@@ -78,8 +83,8 @@ export function ExploreView() {
                 <button
                   key={post.id}
                   className="explore-item"
-                  onClick={() => openUserProfile(post.author)}
-                  title={`Voir le profil de ${post.author.username}`}
+                  onClick={() => openPost(post.id)}
+                  title={post.caption || 'Voir la publication'}
                 >
                   {post.imageUrl ? (
                     <img src={post.imageUrl} alt={post.caption?.slice(0, 40) || ''} loading="lazy" />

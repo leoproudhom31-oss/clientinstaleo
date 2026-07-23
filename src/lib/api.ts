@@ -3,6 +3,8 @@
 // on envoie donc credentials: 'include' a chaque appel.
 
 import type {
+  Comment,
+  Highlight,
   Message,
   Notification,
   Post,
@@ -153,6 +155,29 @@ export const api = {
 
   notifications(): Promise<{ notifications: Notification[] }> {
     return call<{ notifications: Notification[] }>('notifications')
+  },
+
+  post(id: string): Promise<{
+    post: Post
+    likers: User[]
+    comments: Comment[]
+    commentsHasMore: boolean
+    commentsNextMinId: string | null
+  }> {
+    return call(`post?id=${encodeURIComponent(id)}`)
+  },
+
+  postComments(
+    id: string,
+    minId?: string,
+  ): Promise<{ comments: Comment[]; hasMore: boolean; nextMinId: string | null }> {
+    const qs = new URLSearchParams({ id, what: 'comments' })
+    if (minId) qs.set('minId', minId)
+    return call(`post?${qs.toString()}`)
+  },
+
+  highlights(userId: string): Promise<{ highlights: Highlight[] }> {
+    return call(`highlights?userId=${encodeURIComponent(userId)}`)
   },
 
   inbox(): Promise<{ threads: ThreadPreview[] }> {

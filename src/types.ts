@@ -54,6 +54,20 @@ export interface StoryTray {
   takenAt: number
 }
 
+export interface Comment {
+  id: string
+  user: User
+  text: string
+  createdAt: number
+  likeCount: number
+}
+
+export interface Highlight {
+  id: string
+  title: string
+  cover: string | null
+}
+
 export interface Notification {
   id: string
   text: string

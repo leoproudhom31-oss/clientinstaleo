@@ -100,6 +100,11 @@ interface Store {
   openUserProfile: (user: User) => void
   closeUserProfile: () => void
 
+  // Detail d'une publication (image, j'aime, commentaires).
+  postId: string | null
+  openPost: (id: string) => void
+  closePost: () => void
+
   onLoggedIn: (user: User) => void
   logout: () => void
   switchToDemo: () => void
@@ -199,15 +204,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [loginOpen, setLoginOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [profileUser, setProfileUser] = useState<User | null>(null)
+  const [postId, setPostId] = useState<string | null>(null)
 
   const toggleMembers = useCallback(() => setMembersVisible((v) => !v), [])
   const openUserProfile = useCallback((user: User) => setProfileUser(user), [])
   const closeUserProfile = useCallback(() => setProfileUser(null), [])
+  const openPost = useCallback((id: string) => setPostId(id), [])
+  const closePost = useCallback(() => setPostId(null), [])
 
   // Evite les courses : on ignore les reponses tardives d'un thread abandonne.
   const threadReq = useRef(0)
   const modeRef = useRef(mode)
   modeRef.current = mode
+  // Reference stable vers le compte connecte : evite de recreer le timer de
+  // polling (et donc d'empiler des intervalles) a chaque changement de `me`.
+  const meRef = useRef(me)
+  meRef.current = me
 
   // Buffer d'"avance" pour l'historique des DM : une page plus ancienne est
   // recuperee EN ARRIERE-PLAN des que possible (a l'ouverture du thread, puis
@@ -438,7 +450,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setNotifications(n)
       }
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement des notifications.')
+      // news/inbox renvoie parfois 500 pour une session web : message clair
+      // plutot qu'un "Erreur Instagram (500)" brut.
+      setError(
+        "Instagram n'a pas renvoye ton fil d'activite (il limite parfois cette API). Reessaie dans un instant.",
+      )
       setErrorCode(e instanceof ApiError ? e.code : undefined)
       setNotifications([])
     } finally {
@@ -686,32 +702,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Rafraichissement en direct de la conversation ouverte : on interroge
   // periodiquement la page la plus recente et on fusionne les nouveaux messages.
   // Sans ca, on n'a jamais les messages recus tant qu'on ne rouvre pas le thread.
+  // Garde-fous : une seule requete a la fois (pas d'empilement), et pause quand
+  // la fenetre est en arriere-plan (economie de requetes).
   useEffect(() => {
     if (mode !== 'live' || !activeThreadId) return
     let stopped = false
+    let inFlight = false
     const poll = async () => {
+      if (inFlight || document.hidden) return
+      inFlight = true
       try {
         const { thread: fresh } = await api.thread(activeThreadId)
         if (stopped) return
-        setActiveThread((t) => (t && t.id === activeThreadId ? mergeNewest(t, fresh.messages, me.pk) : t))
-        // Met a jour l'apercu de la conversation dans la liste de gauche.
+        setActiveThread((t) =>
+          t && t.id === activeThreadId ? mergeNewest(t, fresh.messages, meRef.current.pk) : t,
+        )
         setThreads((prev) =>
           prev.map((p) =>
-            p.id === activeThreadId
+            p.id === activeThreadId && p.lastActivity !== fresh.lastActivity
               ? { ...p, lastMessage: fresh.lastMessage, lastActivity: fresh.lastActivity, unread: false }
               : p,
           ),
         )
       } catch {
         /* transitoire : on reessaiera au prochain tick */
+      } finally {
+        inFlight = false
       }
     }
-    const id = window.setInterval(poll, 5000)
+    const id = window.setInterval(poll, 6000)
     return () => {
       stopped = true
       window.clearInterval(id)
     }
-  }, [mode, activeThreadId, me.pk])
+  }, [mode, activeThreadId])
 
   // Charge les donnees quand on change d'espace (ou de canal du fil).
   useEffect(() => {
@@ -832,6 +856,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       profileUser,
       openUserProfile,
       closeUserProfile,
+      postId,
+      openPost,
+      closePost,
       onLoggedIn,
       logout,
       switchToDemo,
@@ -847,7 +874,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeThreadId, activeThread, threadLoading, olderLoading, openThread,
       loadOlderMessages, sendMessage,
       error, errorCode, membersVisible, toggleMembers, loginOpen, settingsOpen,
-      profileUser, openUserProfile, closeUserProfile,
+      profileUser, openUserProfile, closeUserProfile, postId, openPost, closePost,
       onLoggedIn, logout, switchToDemo,
     ],
   )
