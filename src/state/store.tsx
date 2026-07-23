@@ -37,7 +37,9 @@ interface Store {
   activeThreadId: string | null
   activeThread: Thread | null
   threadLoading: boolean
+  olderLoading: boolean
   openThread: (id: string) => void
+  loadOlderMessages: () => void
   sendMessage: (text: string) => void
 
   error: string | null
@@ -78,6 +80,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const [activeThread, setActiveThread] = useState<Thread | null>(null)
   const [threadLoading, setThreadLoading] = useState(false)
+  const [olderLoading, setOlderLoading] = useState(false)
 
   const [error, setError] = useState<string | null>(null)
   const [membersVisible, setMembersVisible] = useState(true)
@@ -152,12 +155,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })()
   }, [])
 
+  // Remonte l'historique d'une conversation (messages plus anciens).
+  const loadOlderMessages = useCallback(() => {
+    if (modeRef.current !== 'live') return // le mode demo n'a pas de pagination
+    setActiveThread((current) => {
+      if (!current || !current.hasOlder || !current.oldestCursor || olderLoading) {
+        return current
+      }
+      const threadId = current.id
+      const cursor = current.oldestCursor
+      setOlderLoading(true)
+      api
+        .thread(threadId, cursor)
+        .then(({ thread: older }) => {
+          setActiveThread((t) => {
+            if (!t || t.id !== threadId) return t
+            const seen = new Set(t.messages.map((m) => m.id))
+            const prepend = older.messages.filter((m) => !seen.has(m.id))
+            return {
+              ...t,
+              messages: [...prepend, ...t.messages],
+              hasOlder: older.hasOlder,
+              oldestCursor: older.oldestCursor,
+            }
+          })
+        })
+        .catch((e) => {
+          setError(
+            e instanceof ApiError ? e.message : "Impossible de charger l'historique.",
+          )
+        })
+        .finally(() => setOlderLoading(false))
+      return current
+    })
+  }, [olderLoading])
+
   const sendMessage = useCallback(
     (text: string) => {
       const trimmed = text.trim()
       if (!trimmed || !activeThread) return
+      const localId = `local-${Date.now()}`
       const optimistic = {
-        id: `local-${Date.now()}`,
+        id: localId,
         senderId: me.pk,
         text: trimmed,
         timestamp: Math.floor(Date.now() / 1000),
@@ -169,6 +208,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (modeRef.current === 'live') {
         api.send(activeThread.id, trimmed).catch((e) => {
           setError(e instanceof ApiError ? e.message : "L'envoi a echoue.")
+          // La requete a reellement echoue : on ne laisse pas croire que le
+          // message est parti. On le marque comme non envoye.
+          setActiveThread((t) =>
+            t
+              ? {
+                  ...t,
+                  messages: t.messages.map((m) =>
+                    m.id === localId ? { ...m, failed: true } : m,
+                  ),
+                }
+              : t,
+          )
         })
       }
     },
@@ -238,7 +289,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       activeThreadId,
       activeThread,
       threadLoading,
+      olderLoading,
       openThread,
+      loadOlderMessages,
       sendMessage,
       error,
       membersVisible,
@@ -253,7 +306,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       mode, me, space, feedChannel, feed, feedLoading, threads, threadsLoading,
-      activeThreadId, activeThread, threadLoading, openThread, sendMessage,
+      activeThreadId, activeThread, threadLoading, olderLoading, openThread,
+      loadOlderMessages, sendMessage,
       error, membersVisible, toggleMembers, loginOpen, settingsOpen,
       onLoggedIn, logout, switchToDemo,
     ],

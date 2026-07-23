@@ -30,7 +30,8 @@ function json(res, status, payload) {
 // Traduit une erreur { code } (voie session web) en reponse HTTP.
 function apiError(res, e) {
   const code = e?.code
-  const status = code === 'expired' || code === 'checkpoint' ? 401 : 502
+  const status =
+    code === 'expired' || code === 'checkpoint' || code === 'ua_mismatch' ? 401 : 502
   return json(res, status, {
     error: e?.message || 'Erreur cote Instagram.',
     code: code || 'error',

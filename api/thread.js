@@ -19,7 +19,8 @@ module.exports = async (req, res) => {
   const sess = desktop.get()
   if (sess) {
     try {
-      return json(res, 200, { thread: await web.thread(sess, String(id)) })
+      const cursor = req.query?.cursor ? String(req.query.cursor) : undefined
+      return json(res, 200, { thread: await web.thread(sess, String(id), { cursor }) })
     } catch (e) {
       return apiError(res, e)
     }
@@ -51,6 +52,8 @@ module.exports = async (req, res) => {
         : Math.floor(Date.now() / 1000),
       lastMessage: previewText(last),
       messages,
+      hasOlder: false,
+      oldestCursor: null,
     }
 
     await persist(res, ig)

@@ -49,40 +49,94 @@ function mapPost(item) {
   }
 }
 
-function previewText(item) {
-  if (!item) return ''
+// Types de messages (item_type) qu'Instagram peut envoyer dans un thread
+// Direct, regroupes par categorie pour un rendu propre (icone + libelle) au
+// lieu d'un "…" generique.
+const MEDIA_TYPES = ['media', 'raven_media', 'voice_media', 'animated_media']
+const SHARE_TYPES = [
+  'media_share',
+  'clip',
+  'felix_share',
+  'story_share',
+  'reel_share',
+  'xma_media_share',
+  'xma_story_share',
+  'xma_reel_mention',
+  'profile',
+  'link',
+  'location',
+]
+
+function mediaLabel(item) {
+  if (item.item_type === 'voice_media') return '🎤 Message vocal'
+  if (item.item_type === 'animated_media') return 'GIF'
+  if (item.item_type === 'raven_media') return '📷 Media ephemere'
+  return item.media?.media_type === 2 ? '🎥 Video' : '📷 Photo'
+}
+
+function shareLabel(item) {
   switch (item.item_type) {
-    case 'text':
-      return item.text || ''
-    case 'like':
-      return '❤️'
-    case 'media':
-      return '📷 Photo'
-    case 'raven_media':
-      return '📷 Media ephemere'
-    case 'media_share':
-      return '📎 Publication partagee'
-    case 'voice_media':
-      return '🎤 Message vocal'
-    case 'animated_media':
-      return 'GIF'
+    case 'clip':
+      return '🎬 Reel partage'
+    case 'felix_share':
+      return '📺 IGTV partagee'
+    case 'story_share':
+    case 'xma_story_share':
+      return '⭐ Story partagee'
+    case 'reel_share':
+      return '⭐ Reponse a une story'
+    case 'xma_reel_mention':
+      return '⭐ Mention dans une story'
+    case 'profile':
+      return `👤 Profil partage${item.profile?.username ? ' : @' + item.profile.username : ''}`
     case 'link':
       return item.link?.text || '🔗 Lien'
+    case 'location':
+      return `📍 ${item.location?.name || 'Position partagee'}`
     default:
-      return item.text || '…'
+      return '📎 Publication partagee'
   }
 }
 
-const MEDIA_TYPES = [
-  'media',
-  'raven_media',
-  'media_share',
-  'voice_media',
-  'animated_media',
-  'clip',
-  'story_share',
-  'reel_share',
-]
+// Determine la categorie d'un item de conversation + son libelle d'affichage.
+// Categories utilisees par l'UI : text | like | media | share | call | system
+// | unsupported.
+function describeItem(item) {
+  if (!item) return { itemType: 'text', text: '' }
+  const raw = item.item_type
+
+  if (raw === 'text') return { itemType: 'text', text: item.text || '' }
+  if (raw === 'like') return { itemType: 'like', text: '❤️' }
+  if (MEDIA_TYPES.includes(raw)) return { itemType: 'media', text: mediaLabel(item) }
+  if (SHARE_TYPES.includes(raw)) return { itemType: 'share', text: shareLabel(item) }
+  if (raw === 'video_call_event') {
+    return { itemType: 'call', text: '📞 Appel' }
+  }
+  if (raw === 'action_log') {
+    return {
+      itemType: 'system',
+      text: item.action_log?.description || 'Evenement de la conversation',
+    }
+  }
+  if (raw === 'placeholder') {
+    return {
+      itemType: 'unsupported',
+      text:
+        item.placeholder?.message ||
+        item.placeholder?.title ||
+        'Message non disponible dans ce client',
+    }
+  }
+  return {
+    itemType: 'unsupported',
+    text: item.text || 'Element non pris en charge par ce client',
+  }
+}
+
+// Conserve pour l'apercu de conversation (liste des DM).
+function previewText(item) {
+  return describeItem(item).text
+}
 
 function tsSeconds(micro) {
   const n = Number(micro)
@@ -91,14 +145,11 @@ function tsSeconds(micro) {
 }
 
 function mapMessage(item) {
-  let itemType = 'text'
-  if (item.item_type === 'like') itemType = 'like'
-  else if (MEDIA_TYPES.includes(item.item_type)) itemType = 'media'
-  else if (item.item_type !== 'text') itemType = 'placeholder'
+  const { itemType, text } = describeItem(item)
   return {
     id: String(item.item_id ?? item.timestamp ?? Math.random()),
     senderId: String(item.user_id ?? ''),
-    text: item.item_type === 'text' ? item.text || '' : previewText(item),
+    text,
     timestamp: tsSeconds(item.timestamp),
     itemType,
   }
@@ -131,4 +182,5 @@ module.exports = {
   mapThreadPreview,
   tsSeconds,
   MEDIA_TYPES,
+  SHARE_TYPES,
 }

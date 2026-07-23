@@ -562,6 +562,61 @@ a:hover {
   gap: 6px;
 }
 
+/* Messages non-texte (media, partage, appel, non pris en charge) : icone +
+   libelle discret plutot qu'un "…" brut. */
+.msg-meta {
+  font-size: 14px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--bg-sidebar);
+  border-radius: 6px;
+  width: fit-content;
+  max-width: 100%;
+}
+.msg-meta.unsupported {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.msg-meta svg {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+/* Message "systeme" (evenement de groupe) : ligne centree et discrete, facon
+   Discord, sans avatar. */
+.msg-system {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 16px 4px 56px;
+  font-size: 13px;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.msg-failed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--red);
+  margin-top: 2px;
+}
+
+/* Repere de chargement de l'historique (en haut de la conversation) */
+.load-older {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
 /* ---- Embed d'un post (feed) ---- */
 .post-embed {
   margin-top: 6px;
