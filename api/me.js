@@ -9,7 +9,13 @@ module.exports = async (req, res) => {
   const sess = desktop.get()
   if (sess) {
     try {
-      return json(res, 200, { user: await web.me(sess) })
+      const raw = await web.meRaw(sess)
+      // Met en cache le profil (evite un appel reseau a chaque /api/me, et
+      // beneficie aux autres endpoints qui lisent sess.user).
+      if (!sess.user || sess.user.username !== raw.username) {
+        desktop.update({ user: raw })
+      }
+      return json(res, 200, { user: mapUser(raw) })
     } catch (e) {
       // Session valide (capturee) mais le profil n'a pas charge : on ne bloque
       // PAS la connexion. On renvoie un profil minimal derive de la session.

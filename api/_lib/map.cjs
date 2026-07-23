@@ -67,35 +67,54 @@ const SHARE_TYPES = [
   'location',
 ]
 
+// Pas d'emoji ici : l'UI affiche deja une icone dediee a cote de ce libelle
+// (voir MEDIA_ICON dans DMView.tsx). Les doubler serait redondant.
 function mediaLabel(item) {
-  if (item.item_type === 'voice_media') return '🎤 Message vocal'
+  if (item.item_type === 'voice_media') return 'Message vocal'
   if (item.item_type === 'animated_media') return 'GIF'
-  if (item.item_type === 'raven_media') return '📷 Media ephemere'
-  return item.media?.media_type === 2 ? '🎥 Video' : '📷 Photo'
+  if (item.item_type === 'raven_media') return 'Media ephemere'
+  return item.media?.media_type === 2 ? 'Video' : 'Photo'
 }
 
 function shareLabel(item) {
   switch (item.item_type) {
     case 'clip':
-      return '🎬 Reel partage'
+      return 'Reel partage'
     case 'felix_share':
-      return '📺 IGTV partagee'
+      return 'IGTV partagee'
     case 'story_share':
     case 'xma_story_share':
-      return '⭐ Story partagee'
+      return 'Story partagee'
     case 'reel_share':
-      return '⭐ Reponse a une story'
+      return 'Reponse a une story'
     case 'xma_reel_mention':
-      return '⭐ Mention dans une story'
+      return 'Mention dans une story'
     case 'profile':
-      return `👤 Profil partage${item.profile?.username ? ' : @' + item.profile.username : ''}`
+      return `Profil partage${item.profile?.username ? ' : @' + item.profile.username : ''}`
     case 'link':
-      return item.link?.text || '🔗 Lien'
+      return item.link?.text || 'Lien'
     case 'location':
-      return `📍 ${item.location?.name || 'Position partagee'}`
+      return item.location?.name || 'Position partagee'
     default:
-      return '📎 Publication partagee'
+      return 'Publication partagee'
   }
+}
+
+// Pour media_share et clip, Instagram fournit l'objet media complet (meme
+// forme que dans le fil) : on peut donc en extraire un vrai apercu (image,
+// legende, auteur) plutot qu'une simple etiquette. Les autres types partages
+// (story/reel/IGTV) sont souvent ephemeres ou dans un format non documente
+// de facon fiable : on garde une etiquette pour eux plutot que de deviner un
+// champ qui pourrait ne pas exister.
+function shareEmbed(item) {
+  if (item.item_type === 'media_share' && item.media_share?.user) {
+    return mapPost(item.media_share)
+  }
+  if (item.item_type === 'clip') {
+    const clipMedia = item.clip?.clip || item.clip
+    if (clipMedia?.user) return mapPost(clipMedia)
+  }
+  return null
 }
 
 // Determine la categorie d'un item de conversation + son libelle d'affichage.
@@ -108,7 +127,9 @@ function describeItem(item) {
   if (raw === 'text') return { itemType: 'text', text: item.text || '' }
   if (raw === 'like') return { itemType: 'like', text: '❤️' }
   if (MEDIA_TYPES.includes(raw)) return { itemType: 'media', text: mediaLabel(item) }
-  if (SHARE_TYPES.includes(raw)) return { itemType: 'share', text: shareLabel(item) }
+  if (SHARE_TYPES.includes(raw)) {
+    return { itemType: 'share', text: shareLabel(item), embed: shareEmbed(item) }
+  }
   if (raw === 'video_call_event') {
     return { itemType: 'call', text: '📞 Appel' }
   }
@@ -145,13 +166,14 @@ function tsSeconds(micro) {
 }
 
 function mapMessage(item) {
-  const { itemType, text } = describeItem(item)
+  const { itemType, text, embed } = describeItem(item)
   return {
     id: String(item.item_id ?? item.timestamp ?? Math.random()),
     senderId: String(item.user_id ?? ''),
     text,
     timestamp: tsSeconds(item.timestamp),
     itemType,
+    ...(embed ? { embed } : {}),
   }
 }
 

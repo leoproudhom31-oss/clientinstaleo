@@ -584,6 +584,14 @@ a:hover {
   flex-shrink: 0;
   opacity: 0.85;
 }
+.msg-meta.compact {
+  background: none;
+  padding: 0 0 4px;
+  font-size: 13px;
+}
+.msg-share-embed .post-embed {
+  margin-top: 0;
+}
 
 /* Message "systeme" (evenement de groupe) : ligne centree et discrete, facon
    Discord, sans avatar. */
@@ -626,12 +634,31 @@ a:hover {
   border-radius: 4px;
   overflow: hidden;
 }
+.post-embed .pe-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 0;
+  color: var(--brand);
+}
+.post-embed .pe-author {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--header-primary);
+}
+.post-embed .pe-caption {
+  padding: 8px 14px 0;
+  font-size: 13px;
+  color: var(--text-normal);
+  line-height: 1.4;
+}
 .post-embed .pe-media {
   width: 100%;
   display: block;
   aspect-ratio: 4 / 5;
   object-fit: cover;
   background: #1e1f22;
+  margin-top: 8px;
 }
 .post-embed .pe-footer {
   display: flex;

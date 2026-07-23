@@ -48,6 +48,8 @@ export interface Message {
   mediaUrl?: string | null
   /** Message optimiste dont l'envoi reel a echoue. */
   failed?: boolean
+  /** Apercu (image, legende, auteur) pour une publication/reel partage. */
+  embed?: Post | null
 }
 
 export interface Thread extends ThreadPreview {

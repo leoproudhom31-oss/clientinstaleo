@@ -88,15 +88,21 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
   return data
 }
 
-async function me(session) {
+// Renvoie le profil BRUT (forme attendue par map.mapUser), pas encore mappe :
+// permet a l'appelant de le mettre en cache dans la session sans double mapping.
+async function meRaw(session) {
   // Profil deja capture dans la page Instagram (le plus fiable : pas d'appel
   // reseau supplementaire, donc aucun risque de mismatch).
-  if (session.user && session.user.pk) return map.mapUser(session.user)
+  if (session.user && session.user.username) return session.user
 
-  // Repli reseau (anciennes sessions sans profil capture).
+  // Repli reseau (session sans profil capture au login).
   const data = await webRequest(session, '/api/v1/accounts/current_user/?edit=false')
-  if (data?.user) return map.mapUser(data.user)
+  if (data?.user) return data.user
   throw new Error('Profil indisponible')
+}
+
+async function me(session) {
+  return map.mapUser(await meRaw(session))
 }
 
 // Publications d'un utilisateur (par defaut, le compte connecte).
@@ -181,4 +187,4 @@ async function send(session, threadId, text) {
   }
 }
 
-module.exports = { me, feed, inbox, thread, send, userFeed }
+module.exports = { me, meRaw, feed, inbox, thread, send, userFeed }
