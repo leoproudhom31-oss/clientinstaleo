@@ -11,6 +11,7 @@
 // invente.
 
 const map = require('./map.cjs')
+const pageBridge = require('./page-bridge.cjs')
 
 const APP_ID = '936619743392459'
 // Repli seulement pour d'anciennes sessions capturees avant l'ajout de cette
@@ -362,9 +363,69 @@ async function thread(session, id, { cursor } = {}) {
   }
 }
 
+// En-tetes x-* a rejouer dans la page pour l'envoi. On EXCLUT x-csrftoken (la
+// page le relit depuis le cookie, a jour) et x-ig-app-id (fixe cote JS) ; on
+// garde les autres (asbd, www-claim, web-session, instagram-ajax, bloks).
+function writeHeadersFrom(session) {
+  const skip = new Set(['x-csrftoken', 'x-ig-app-id'])
+  const out = {}
+  for (const [k, v] of Object.entries(session.igHeaders || {})) {
+    if (v && !skip.has(k)) out[k] = v
+  }
+  return out
+}
+
+// Envoi via le contexte de la page Instagram (fenetre cachee). C'est la voie
+// FIABLE : le navigateur ajoute le signal same-origin qu'Instagram exige sur
+// les ecritures. Renvoie le message mappe, ou lance une erreur codee.
+async function sendViaPage(session, threadId, text) {
+  console.log(`[web-ig] send() : via le contexte de la page Instagram (fenetre cachee) thread=${threadId}`)
+  const res = await pageBridge.send(String(threadId), text, writeHeadersFrom(session))
+  console.log(`[web-ig] send() : reponse page -> ${JSON.stringify(res).slice(0, 260)}`)
+
+  if (res?.error) {
+    const e = new Error(`Envoi impossible depuis la page Instagram (${res.error}).`)
+    e.code = 'network'
+    throw e
+  }
+  const data = res?.data
+  if (data?.status === 'ok') {
+    const item = data.payload || (Array.isArray(data.payload) ? data.payload[0] : null)
+    console.log(`[web-ig] send() : accepte par Instagram (page), item_id=${item?.item_id || res?.ctx || '(genere)'}`)
+    return {
+      id: String(item?.item_id || res?.ctx || Date.now()),
+      senderId: String(session.dsUserId || ''),
+      text,
+      timestamp: Math.floor(Date.now() / 1000),
+      itemType: 'text',
+    }
+  }
+  // Redirige vers login / session invalide dans la page.
+  if (res?.redirected || /accounts\/login/i.test(res?.url || '') || res?.status === 302) {
+    const e = new Error('Session Instagram expiree. Deconnecte-toi puis reconnecte-toi.')
+    e.code = 'expired'
+    throw e
+  }
+  // Reponse inattendue : on laisse l'appelant tenter le repli serveur.
+  const e = new Error(data?.message || `Reponse inattendue de la page (${res?.status || '?'}).`)
+  e.code = 'page_unexpected'
+  throw e
+}
+
 async function send(session, threadId, text) {
+  // Voie prioritaire : envoi dans la page reelle (same-origin authentique).
+  if (pageBridge.hasSender()) {
+    try {
+      return await sendViaPage(session, threadId, text)
+    } catch (e) {
+      // expired / checkpoint : inutile de retenter en Node, meme verdict.
+      if (e.code === 'expired' || e.code === 'checkpoint' || e.code === 'network') throw e
+      console.warn(`[web-ig] send() via page a echoue (${e.code || e.message}), repli sur la requete serveur`)
+    }
+  }
+
   const ctx = uuid()
-  console.log(`[web-ig] send() : envoi vers le thread ${threadId} (client_context=${ctx})`)
+  console.log(`[web-ig] send() : repli serveur vers le thread ${threadId} (client_context=${ctx})`)
   const data = await webRequest(session, '/api/v1/direct_v2/threads/broadcast/text/', {
     method: 'POST',
     form: {

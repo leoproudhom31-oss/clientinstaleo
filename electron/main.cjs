@@ -14,9 +14,14 @@ process.env.COOKIE_INSECURE = '1'
 require(path.join(__dirname, '..', 'server', 'env.cjs')).loadEnv()
 const { start } = require(path.join(__dirname, '..', 'server.cjs'))
 const desktop = require(path.join(__dirname, '..', 'api', '_lib', 'desktop-session.cjs'))
+const pageBridge = require(path.join(__dirname, '..', 'api', '_lib', 'page-bridge.cjs'))
 
 const IG_PARTITION = 'persist:instagram'
 let mainWindow = null
+// Fenetre cachee, chargee sur instagram.com et deja connectee (meme partition) :
+// sert a executer les ECRITURES (envoi de message) dans le vrai contexte de la
+// page, la ou le navigateur ajoute le signal same-origin qu'Instagram exige.
+let igWorker = null
 
 // En-tetes de securite qu'Instagram exige sur ses requetes d'ecriture (envoi de
 // message...). Les LECTURES passent avec les seuls cookies + X-IG-App-ID, mais
@@ -65,6 +70,84 @@ function setupIgHeaderCapture() {
   } catch (e) {
     console.warn('[ig-headers] impossible d’activer l’interception :', e?.message || e)
   }
+}
+
+// Cree (ou reutilise) la fenetre cachee connectee a Instagram et attend qu'elle
+// soit chargee. Elle partage la partition persist:instagram : si la session est
+// valide, la page est deja authentifiee.
+async function getIgWorker() {
+  if (igWorker && !igWorker.isDestroyed()) return igWorker
+  console.log('[ig-send] creation de la fenetre worker Instagram (cachee)')
+  igWorker = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      partition: IG_PARTITION,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+  igWorker.on('closed', () => {
+    igWorker = null
+  })
+  await igWorker.loadURL('https://www.instagram.com/')
+  console.log('[ig-send] fenetre worker prete')
+  return igWorker
+}
+
+// Envoie un message DANS le contexte de la page Instagram. Le navigateur ajoute
+// lui-meme les en-tetes same-origin (Sec-Fetch-Site...) qu'Instagram exige sur
+// les ecritures et que Node ne peut pas falsifier. On complete avec les x-*
+// captures (asbd, claim, web-session...) pour coller au plus pres.
+async function igPageSend(threadId, text, writeHeaders) {
+  const win = await getIgWorker()
+  const js = `(async () => {
+    try {
+      const csrftoken = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+      const ctx = String(Date.now()) + String(Math.floor(Math.random() * 1e9));
+      const params = new URLSearchParams();
+      params.set('action', 'send_item');
+      params.set('thread_ids', '[' + ${JSON.stringify(String(threadId))} + ']');
+      params.set('text', ${JSON.stringify(String(text))});
+      params.set('client_context', ctx);
+      params.set('offline_threading_id', ctx);
+      const headers = Object.assign({}, ${JSON.stringify(writeHeaders || {})}, {
+        'content-type': 'application/x-www-form-urlencoded',
+        'x-requested-with': 'XMLHttpRequest',
+        'x-ig-app-id': '936619743392459',
+        'x-csrftoken': csrftoken,
+      });
+      const r = await fetch('/api/v1/direct_v2/threads/broadcast/text/', {
+        method: 'POST',
+        headers,
+        body: params.toString(),
+        credentials: 'include',
+      });
+      const raw = await r.text();
+      let data = null;
+      try { data = JSON.parse(raw); } catch (e) {}
+      return { ok: r.ok, status: r.status, url: r.url, redirected: r.redirected, data, raw: raw.slice(0, 200), ctx };
+    } catch (e) {
+      return { error: String(e && e.message || e) };
+    }
+  })()`
+  try {
+    const res = await win.webContents.executeJavaScript(js)
+    console.log(
+      `[ig-send] resultat page : status=${res?.status} ok=${res?.ok} redirected=${res?.redirected} ` +
+        `igStatus=${res?.data?.status || '?'}${res?.error ? ' error=' + res.error : ''}`,
+    )
+    return res
+  } catch (e) {
+    console.warn('[ig-send] executeJavaScript a echoue :', e?.message || e)
+    return { error: String(e?.message || e) }
+  }
+}
+
+function destroyIgWorker() {
+  if (igWorker && !igWorker.isDestroyed()) {
+    igWorker.destroy()
+  }
+  igWorker = null
 }
 
 async function createWindow() {
@@ -254,6 +337,8 @@ ipcMain.handle('ig-login', async () => {
         `[ig-login] en-tetes finaux enregistres : [${Object.keys(s.igHeaders).join(', ') || 'aucun'}]`,
       )
       desktop.set(s)
+      // Repart d'une page worker fraiche (authentifiee) pour les prochains envois.
+      destroyIgWorker()
       console.log('[ig-login] session complete, fenetre fermee')
       if (!authWin.isDestroyed()) authWin.close()
       resolve({ ok: true })
@@ -284,6 +369,8 @@ ipcMain.handle('ig-login', async () => {
 ipcMain.handle('ig-logout', async () => {
   console.log('[ig-login] deconnexion demandee')
   desktop.clear()
+  capturedIgHeaders = {}
+  destroyIgWorker() // la page cachee doit repartir de zero a la prochaine connexion
   try {
     await session.fromPartition(IG_PARTITION).clearStorageData()
   } catch {
@@ -295,6 +382,8 @@ ipcMain.handle('ig-logout', async () => {
 app.whenReady().then(() => {
   console.log('[instaleo] application prete, ouverture de la fenetre principale')
   setupIgHeaderCapture()
+  // Les envois de message passeront par la page reelle (voir page-bridge.cjs).
+  pageBridge.setSender(igPageSend)
   createWindow()
 })
 
