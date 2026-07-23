@@ -22,6 +22,13 @@ export interface Post {
   permalink?: string | null
 }
 
+export interface Reel extends Post {
+  /** URL (proxifiee) de la video du reel. */
+  videoUrl: string | null
+  /** Nombre de vues/lectures. */
+  viewCount: number
+}
+
 export interface StoryItem {
   id: string
   takenAt: number

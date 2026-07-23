@@ -4,6 +4,7 @@
 import type {
   Message,
   Post,
+  Reel,
   StoryTray,
   Thread,
   ThreadPreview,
@@ -197,6 +198,57 @@ export function demoStories(): StoryTray[] {
       duration: null,
     })),
   }))
+}
+
+// Reels de demonstration : sans vraie video (poster seulement), pour illustrer
+// l'interface hors connexion.
+export function demoReels(): Reel[] {
+  return [
+    {
+      id: 'r1',
+      author: studio,
+      takenAt: now - 60 * 40,
+      caption: 'Best of du shooting en 15 s 🎬',
+      imageUrl: studio.avatarUrl,
+      likeCount: 12045,
+      commentCount: 312,
+      location: null,
+      permalink: null,
+      videoUrl: null,
+      viewCount: 98230,
+    },
+    {
+      id: 'r2',
+      author: maxime,
+      takenAt: now - 60 * 60 * 4,
+      caption: 'Timelapse coucher de soleil 🌇',
+      imageUrl: maxime.avatarUrl,
+      likeCount: 4300,
+      commentCount: 88,
+      location: 'Lyon',
+      permalink: null,
+      videoUrl: null,
+      viewCount: 41200,
+    },
+    {
+      id: 'r3',
+      author: chef,
+      takenAt: now - 60 * 60 * 20,
+      caption: 'Le risotto parfait en 30 s 🍄',
+      imageUrl: chef.avatarUrl,
+      likeCount: 8800,
+      commentCount: 140,
+      location: null,
+      permalink: null,
+      videoUrl: null,
+      viewCount: 67540,
+    },
+  ]
+}
+
+// Publications enregistrees de demonstration.
+export function demoSaved(): Post[] {
+  return [demoFeed[2], demoFeed[0], demoFeed[4]]
 }
 
 // Membres "en ligne / hors ligne" pour la colonne de droite (feed).

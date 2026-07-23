@@ -231,6 +231,19 @@ function mapStoryItem(item) {
   }
 }
 
+// Un reel = une publication centree sur la video. On repart de mapPost (auteur,
+// legende, poster, likes, permalink) et on ajoute la video + le nombre de vues.
+function mapReel(item) {
+  const m = item?.media || item
+  if (!m || !m.user) return null
+  const base = mapPost(m)
+  return {
+    ...base,
+    videoUrl: mediaProxy(bestVideo(m)),
+    viewCount: Number(m.play_count ?? m.view_count ?? m.ig_play_count ?? 0) || 0,
+  }
+}
+
 // Une entree du carrousel de stories : un compte + ses stories du moment.
 function mapStoryTray(tray) {
   const user = mapUser(tray.user)
@@ -278,6 +291,7 @@ module.exports = {
   mapThreadPreview,
   mapStoryItem,
   mapStoryTray,
+  mapReel,
   tsSeconds,
   MEDIA_TYPES,
   SHARE_TYPES,

@@ -345,6 +345,44 @@ async function storyReel(session, reelId) {
   return items.map(map.mapStoryItem)
 }
 
+// Fil des reels (onglet Reels). POST clips/home, paginé via paging_info.max_id.
+async function reels(session, { maxId } = {}) {
+  const form = { container_module: 'clips_viewer_clips_tab' }
+  if (maxId) form.max_id = maxId
+  const data = await webRequest(session, '/api/v1/clips/home/', { method: 'POST', form })
+  const items = data.items || data.reels_media || data.clips || []
+  const list = items.map(map.mapReel).filter(Boolean)
+  const paging = data.paging_info || {}
+  console.log(
+    `[web-ig] reels() : ${items.length} elements bruts -> ${list.length} reels | hasMore=${Boolean(paging.more_available)}`,
+  )
+  return {
+    reels: list,
+    hasMore: Boolean(paging.more_available),
+    nextMaxId: paging.max_id || null,
+  }
+}
+
+// Publications enregistrees (onglet Enregistres). GET feed/saved/posts.
+async function saved(session, { maxId } = {}) {
+  let url = '/api/v1/feed/saved/posts/?'
+  if (maxId) url += `max_id=${encodeURIComponent(maxId)}`
+  const data = await webRequest(session, url)
+  const items = data.items || []
+  const posts = items
+    .map((i) => i.media || i)
+    .filter((m) => m && m.user)
+    .map(map.mapPost)
+  console.log(
+    `[web-ig] saved() : ${items.length} elements -> ${posts.length} publications | hasMore=${Boolean(data.more_available)}`,
+  )
+  return {
+    posts,
+    hasMore: Boolean(data.more_available),
+    nextMaxId: data.next_max_id || null,
+  }
+}
+
 async function inbox(session) {
   const data = await webRequest(
     session,
@@ -462,4 +500,16 @@ async function send(session, threadId, text) {
   }
 }
 
-module.exports = { me, meRaw, feed, inbox, thread, send, userFeed, stories, storyReel }
+module.exports = {
+  me,
+  meRaw,
+  feed,
+  inbox,
+  thread,
+  send,
+  userFeed,
+  stories,
+  storyReel,
+  reels,
+  saved,
+}

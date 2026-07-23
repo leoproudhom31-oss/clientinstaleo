@@ -1379,3 +1379,97 @@ a:hover {
   right: 0;
   width: 67%;
 }
+
+/* ------------------------------------------------------------------ Reels -- */
+.reel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+  padding: 18px 16px 40px;
+}
+.reel-card {
+  background: var(--bg-secondary, #2b2d31);
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--bg-modifier, rgba(255, 255, 255, 0.06));
+}
+.reel-video {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  background: #000;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.reel-media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.reel-media-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint, #6d6f78);
+}
+.reel-play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.reel-info {
+  padding: 10px 12px 12px;
+}
+.reel-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.reel-author-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--header-primary);
+}
+.reel-caption {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-normal, #dbdee1);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.reel-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.reel-stats span,
+.reel-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.reel-link {
+  color: var(--brand);
+  text-decoration: none;
+  margin-left: auto;
+}
+.reel-link:hover {
+  text-decoration: underline;
+}
