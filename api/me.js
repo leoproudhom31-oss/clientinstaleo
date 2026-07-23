@@ -11,7 +11,17 @@ module.exports = async (req, res) => {
     try {
       return json(res, 200, { user: await web.me(sess) })
     } catch (e) {
-      return apiError(res, e)
+      // Session valide (capturee) mais le profil n'a pas charge : on ne bloque
+      // PAS la connexion. On renvoie un profil minimal derive de la session.
+      if (e?.code === 'expired') return apiError(res, e)
+      return json(res, 200, {
+        user: {
+          pk: String(sess.dsUserId || ''),
+          username: sess.username || 'mon compte',
+          fullName: '',
+          avatarUrl: null,
+        },
+      })
     }
   }
 

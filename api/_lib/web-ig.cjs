@@ -49,6 +49,13 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
     /* reponse non-JSON (page de login, etc.) */
   }
 
+  // Journalise les echecs dans le terminal (npm start) pour diagnostic.
+  if (!res.ok || !data) {
+    console.warn(
+      `[web-ig] ${method} ${url} -> ${res.status} ${res.statusText} | ${text.slice(0, 180)}`,
+    )
+  }
+
   if (res.status === 401 || res.status === 403 || data?.message === 'login_required') {
     const e = new Error('Session Instagram expiree. Reconnecte-toi.')
     e.code = 'expired'
@@ -68,8 +75,22 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
 }
 
 async function me(session) {
-  const data = await webRequest(session, '/api/v1/accounts/current_user/?edit=false')
-  return map.mapUser(data.user || {})
+  // Plusieurs endpoints possibles selon l'hote ; on prend le premier qui repond.
+  const endpoints = [
+    'https://i.instagram.com/api/v1/accounts/current_user/?edit=false',
+    '/api/v1/accounts/current_user/?edit=false',
+    `https://i.instagram.com/api/v1/users/${session.dsUserId}/info/`,
+  ]
+  let lastErr
+  for (const url of endpoints) {
+    try {
+      const data = await webRequest(session, url)
+      if (data?.user) return map.mapUser(data.user)
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  throw lastErr || new Error('Profil indisponible')
 }
 
 async function feed(session) {

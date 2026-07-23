@@ -62,6 +62,7 @@ async function captureSession(ses) {
     sessionid,
     dsUserId,
     csrftoken: value('csrftoken') || '',
+    username: value('ds_user') || '', // Instagram expose le pseudo dans ce cookie
     cookieHeader: cookies.map((c) => `${c.name}=${c.value}`).join('; '),
   }
 }
