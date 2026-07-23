@@ -363,67 +363,46 @@ async function thread(session, id, { cursor } = {}) {
   }
 }
 
-// En-tetes x-* a rejouer dans la page pour l'envoi. On EXCLUT x-csrftoken (la
-// page le relit depuis le cookie, a jour) et x-ig-app-id (fixe cote JS) ; on
-// garde les autres (asbd, www-claim, web-session, instagram-ajax, bloks).
-function writeHeadersFrom(session) {
-  const skip = new Set(['x-csrftoken', 'x-ig-app-id'])
-  const out = {}
-  for (const [k, v] of Object.entries(session.igHeaders || {})) {
-    if (v && !skip.has(k)) out[k] = v
-  }
-  return out
-}
-
-// Envoi via le contexte de la page Instagram (fenetre cachee). C'est la voie
-// FIABLE : le navigateur ajoute le signal same-origin qu'Instagram exige sur
-// les ecritures. Renvoie le message mappe, ou lance une erreur codee.
+// Envoi en pilotant le VRAI composeur d'Instagram dans la fenetre cachee.
+// C'est la seule voie fiable : le POST /broadcast/text/ est refuse (redirige
+// vers login) pour une session WEB, meme execute depuis la page — c'est un
+// endpoint mobile. En laissant le JS d'Instagram envoyer, on utilise l'endpoint
+// reel qu'il emploie. Renvoie le message mappe, ou lance une erreur codee.
 async function sendViaPage(session, threadId, text) {
-  console.log(`[web-ig] send() : via le contexte de la page Instagram (fenetre cachee) thread=${threadId}`)
-  const res = await pageBridge.send(String(threadId), text, writeHeadersFrom(session))
-  console.log(`[web-ig] send() : reponse page -> ${JSON.stringify(res).slice(0, 260)}`)
+  console.log(`[web-ig] send() : via le composeur de la page Instagram thread=${threadId}`)
+  const res = await pageBridge.send(String(threadId), text)
+  console.log(`[web-ig] send() : reponse UI -> ${JSON.stringify(res).slice(0, 260)}`)
 
-  if (res?.error) {
-    const e = new Error(`Envoi impossible depuis la page Instagram (${res.error}).`)
-    e.code = 'network'
-    throw e
-  }
-  const data = res?.data
-  if (data?.status === 'ok') {
-    const item = data.payload || (Array.isArray(data.payload) ? data.payload[0] : null)
-    console.log(`[web-ig] send() : accepte par Instagram (page), item_id=${item?.item_id || res?.ctx || '(genere)'}`)
+  if (res?.ok) {
+    console.log(`[web-ig] send() : accepte par Instagram (composeur, ${res.method || '?'})`)
     return {
-      id: String(item?.item_id || res?.ctx || Date.now()),
+      // L'UI ne renvoie pas l'item_id ; on genere un identifiant local. La liste
+      // se resynchronisera au prochain rafraichissement du fil de la conversation.
+      id: `page_${Date.now()}`,
       senderId: String(session.dsUserId || ''),
       text,
       timestamp: Math.floor(Date.now() / 1000),
       itemType: 'text',
     }
   }
-  // Redirige vers login / session invalide dans la page.
-  if (res?.redirected || /accounts\/login/i.test(res?.url || '') || res?.status === 302) {
+  // Composeur introuvable + URL de login = la page n'est plus authentifiee.
+  if (/accounts\/login/i.test(res?.url || '')) {
     const e = new Error('Session Instagram expiree. Deconnecte-toi puis reconnecte-toi.')
     e.code = 'expired'
     throw e
   }
-  // Reponse inattendue : on laisse l'appelant tenter le repli serveur.
-  const e = new Error(data?.message || `Reponse inattendue de la page (${res?.status || '?'}).`)
-  e.code = 'page_unexpected'
+  const e = new Error(res?.error || 'Envoi non confirme par Instagram.')
+  e.code = 'ig_error'
   throw e
 }
 
 async function send(session, threadId, text) {
-  // Voie prioritaire : envoi dans la page reelle (same-origin authentique).
+  // Dans Electron, la seule voie fiable est le composeur de la page reelle.
   if (pageBridge.hasSender()) {
-    try {
-      return await sendViaPage(session, threadId, text)
-    } catch (e) {
-      // expired / checkpoint : inutile de retenter en Node, meme verdict.
-      if (e.code === 'expired' || e.code === 'checkpoint' || e.code === 'network') throw e
-      console.warn(`[web-ig] send() via page a echoue (${e.code || e.message}), repli sur la requete serveur`)
-    }
+    return await sendViaPage(session, threadId, text)
   }
 
+  // Hors Electron (serveur local/Vercel sans fenetre) : repli requete serveur.
   const ctx = uuid()
   console.log(`[web-ig] send() : repli serveur vers le thread ${threadId} (client_context=${ctx})`)
   const data = await webRequest(session, '/api/v1/direct_v2/threads/broadcast/text/', {
