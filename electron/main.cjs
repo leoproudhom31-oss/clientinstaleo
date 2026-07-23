@@ -142,17 +142,24 @@ async function igPageSend(threadId, text) {
       return { ok: false, stage: 'composer', error: 'champ de saisie introuvable', url };
     }
 
-    // 2) Ecrire le texte de facon a ce que React le prenne en compte.
+    // 2) Ecrire le texte de facon a ce que React/l'editeur le prenne en compte,
+    //    en VIDANT d'abord le champ (evite tout brouillon residuel) et SANS
+    //    double insertion.
     box.focus();
     const isTextarea = box.tagName === 'TEXTAREA';
     if (isTextarea) {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+      setter.call(box, '');
+      box.dispatchEvent(new Event('input', { bubbles: true }));
       setter.call(box, TEXT);
       box.dispatchEvent(new Event('input', { bubbles: true }));
     } else {
+      // Editeur riche (contenteditable) : execCommand declenche DEJA l'evenement
+      // input natif que l'editeur traite. Il ne faut donc PAS en dispatcher un
+      // second, sinon le texte est insere deux fois (message envoye en double).
       try { document.execCommand('selectAll', false, null); } catch (e) {}
+      try { document.execCommand('delete', false, null); } catch (e) {}
       try { document.execCommand('insertText', false, TEXT); } catch (e) {}
-      box.dispatchEvent(new InputEvent('input', { bubbles: true, data: TEXT, inputType: 'insertText' }));
     }
     await sleep(350);
     const readBox = () => (isTextarea ? box.value : box.textContent) || '';
