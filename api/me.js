@@ -1,9 +1,20 @@
-// GET /api/me — renvoie l'utilisateur connecte si une session valide existe.
+// GET /api/me — renvoie l'utilisateur connecte (session web Electron ou private-api).
 
-const { json } = require('./_lib/http')
+const { json, apiError } = require('./_lib/http')
 const { clientFromSession, persist, mapUser, handleError } = require('./_lib/ig')
+const desktop = require('./_lib/desktop-session.cjs')
+const web = require('./_lib/web-ig.cjs')
 
 module.exports = async (req, res) => {
+  const sess = desktop.get()
+  if (sess) {
+    try {
+      return json(res, 200, { user: await web.me(sess) })
+    } catch (e) {
+      return apiError(res, e)
+    }
+  }
+
   const ig = await clientFromSession(req)
   if (!ig) return json(res, 401, { error: 'Non connecte', code: 'no_session' })
   try {

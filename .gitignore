@@ -12,6 +12,10 @@ dist-ssr
 # Sortie des installeurs Electron
 release
 
+# Session Instagram capturee (ne JAMAIS committer)
+.instaleo-session.enc
+.env
+
 # Env / secrets (NE JAMAIS committer tes identifiants)
 .env
 .env.*

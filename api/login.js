@@ -35,7 +35,8 @@ module.exports = async (req, res) => {
   }
 
   const body = await readJson(req)
-  const username = (body.username || '').trim()
+  // On retire un éventuel « @ » en debut : l'identifiant ne le contient pas.
+  const username = (body.username || '').trim().replace(/^@+/, '')
   const { password, code, twoFactorIdentifier, method, challengeCode } = body
 
   // --- Etape 3 : l'utilisateur soumet le code de verification (challenge) ---
@@ -92,17 +93,15 @@ module.exports = async (req, res) => {
     if (e?.name === 'IgLoginInvalidUserError') {
       return json(res, 401, {
         error:
-          'Cet identifiant est introuvable. Utilise ton nom d’utilisateur (@pseudo) plutot que ton adresse e-mail.',
+          'Identifiant introuvable. Saisis ton nom d’utilisateur, sans « @ » et sans utiliser l’adresse e-mail.',
         code: 'invalid_user',
       })
     }
 
     if (e?.name === 'IgLoginBadPasswordError') {
-      const proxied = Boolean(process.env.IG_PROXY)
       return json(res, 401, {
-        error: proxied
-          ? 'Mot de passe refuse par Instagram. Verifie le mot de passe, et essaie ton @pseudo plutot que ton e-mail.'
-          : 'Connexion refusee par Instagram. Souvent, depuis un serveur (Vercel), Instagram bloque les IP de datacenter et renvoie un faux « mot de passe incorrect » — meme si tes identifiants sont bons. Essaie ton @pseudo (pas l’e-mail), et configure un proxy residentiel (variable IG_PROXY).',
+        error:
+          'Identifiants refuses par Instagram. Verifie ton mot de passe (surtout si tu l’as change recemment). Plus fiable : utilise le bouton « Se connecter avec Instagram » (fenetre officielle).',
         code: 'bad_credentials',
       })
     }

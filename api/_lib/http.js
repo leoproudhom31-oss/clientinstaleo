@@ -27,4 +27,14 @@ function json(res, status, payload) {
   res.end(JSON.stringify(payload))
 }
 
-module.exports = { readJson, json }
+// Traduit une erreur { code } (voie session web) en reponse HTTP.
+function apiError(res, e) {
+  const code = e?.code
+  const status = code === 'expired' || code === 'checkpoint' ? 401 : 502
+  return json(res, status, {
+    error: e?.message || 'Erreur cote Instagram.',
+    code: code || 'error',
+  })
+}
+
+module.exports = { readJson, json, apiError }

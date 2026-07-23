@@ -1,8 +1,10 @@
 // POST /api/send — envoie un message texte dans une conversation.
 // Corps : { threadId, text }
 
-const { readJson, json } = require('./_lib/http')
+const { readJson, json, apiError } = require('./_lib/http')
 const { clientFromSession, persist, handleError } = require('./_lib/ig')
+const desktop = require('./_lib/desktop-session.cjs')
+const web = require('./_lib/web-ig.cjs')
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -13,6 +15,15 @@ module.exports = async (req, res) => {
   const text = (body.text || '').trim()
   if (!threadId || !text) {
     return json(res, 400, { error: 'threadId et text sont requis' })
+  }
+
+  const sess = desktop.get()
+  if (sess) {
+    try {
+      return json(res, 200, { message: await web.send(sess, String(threadId), text) })
+    } catch (e) {
+      return apiError(res, e)
+    }
   }
 
   const ig = await clientFromSession(req)
