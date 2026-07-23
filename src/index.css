@@ -604,6 +604,29 @@ a:hover {
   color: var(--text-faint);
   font-style: italic;
 }
+.msg-system.reaction {
+  color: var(--red);
+  opacity: 0.85;
+}
+
+/* Reactions emoji attachees a un message precis (pastilles sous la bulle). */
+.msg-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.msg-reaction-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
+  line-height: 1;
+  padding: 3px 7px;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  cursor: default;
+}
 
 .msg-failed {
   display: flex;
@@ -652,6 +675,10 @@ a:hover {
   color: var(--text-normal);
   line-height: 1.4;
 }
+.post-embed .pe-media-link {
+  position: relative;
+  display: block;
+}
 .post-embed .pe-media {
   width: 100%;
   display: block;
@@ -659,22 +686,68 @@ a:hover {
   object-fit: cover;
   background: #1e1f22;
   margin-top: 8px;
+  transition: filter 0.15s ease;
+}
+.post-embed .pe-media-link:hover .pe-media {
+  filter: brightness(0.7);
+}
+.post-embed .pe-open-overlay {
+  position: absolute;
+  inset: 8px auto auto 8px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 20px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.post-embed .pe-media-link:hover .pe-open-overlay {
+  opacity: 1;
 }
 .post-embed .pe-footer {
   display: flex;
-  gap: 20px;
-  padding: 10px 14px;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
   font-size: 14px;
   color: var(--text-muted);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  margin-top: 2px;
 }
 .post-embed .pe-footer .pe-stat {
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.post-embed .pe-footer a.pe-stat {
+  color: var(--text-muted);
+  text-decoration: none;
 }
 .post-embed .pe-footer .pe-stat.like:hover {
   color: var(--red);
+  background: rgba(218, 55, 60, 0.1);
   cursor: pointer;
+}
+.post-embed .pe-footer .pe-stat:not(.like):hover {
+  color: var(--interactive-hover);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+.post-embed .pe-footer .pe-external {
+  margin-left: auto;
 }
 .post-location {
   font-size: 12px;

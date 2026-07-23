@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { Post, SpaceId, Thread, ThreadPreview, User } from '../types'
+import type { Message, Post, SpaceId, Thread, ThreadPreview, User } from '../types'
 import { api, ApiError } from '../lib/api'
 import {
   demoFeed,
@@ -94,6 +94,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const modeRef = useRef(mode)
   modeRef.current = mode
 
+  // Buffer d'"avance" pour l'historique des DM : une page plus ancienne est
+  // recuperee EN ARRIERE-PLAN des que possible (a l'ouverture du thread, puis
+  // a nouveau apres chaque fusion), pour que le defilement vers le haut ne
+  // montre jamais de temps de chargement, meme en scrollant vite.
+  const olderBufferRef = useRef<{
+    threadId: string
+    messages: Message[]
+    hasOlder: boolean
+    oldestCursor: string | null
+  } | null>(null)
+  const olderFetchRef = useRef<Promise<void> | null>(null)
+
   const loadFeed = useCallback(async (m: Mode) => {
     setFeedLoading(true)
     setError(null)
@@ -134,6 +146,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setActiveThreadId(id)
     setActiveThread(null)
     setThreadLoading(true)
+    olderBufferRef.current = null
     const reqId = ++threadReq.current
     const m = modeRef.current
     ;(async () => {
@@ -155,40 +168,91 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })()
   }, [])
 
-  // Remonte l'historique d'une conversation (messages plus anciens).
+  const prefetchOlder = useCallback((threadId: string, cursor: string) => {
+    if (olderFetchRef.current) return olderFetchRef.current
+    const p = api
+      .thread(threadId, cursor)
+      .then(({ thread: older }) => {
+        console.log(
+          `[instaleo] historique pre-charge (${threadId}) : ${older.messages.length} messages, encore plus ancien ? ${older.hasOlder}`,
+        )
+        olderBufferRef.current = {
+          threadId,
+          messages: older.messages,
+          hasOlder: Boolean(older.hasOlder),
+          oldestCursor: older.oldestCursor ?? null,
+        }
+      })
+      .catch((e) => {
+        console.warn('[instaleo] pre-chargement de l’historique echoue :', e)
+        olderBufferRef.current = null // sera retente au prochain declenchement
+      })
+      .finally(() => {
+        olderFetchRef.current = null
+      })
+    olderFetchRef.current = p
+    return p
+  }, [])
+
+  // Demarre/relance le prefetch des qu'une page plus ancienne est disponible
+  // et qu'aucun buffer n'est deja pret pour ce thread.
+  useEffect(() => {
+    if (modeRef.current !== 'live') return
+    if (!activeThread?.hasOlder || !activeThread.oldestCursor) return
+    if (olderBufferRef.current?.threadId === activeThread.id) return
+    prefetchOlder(activeThread.id, activeThread.oldestCursor)
+  }, [activeThread?.id, activeThread?.hasOlder, activeThread?.oldestCursor, prefetchOlder])
+
+  function mergeOlder(
+    t: Thread,
+    buf: { messages: Message[]; hasOlder: boolean; oldestCursor: string | null },
+  ): Thread {
+    const seen = new Set(t.messages.map((m) => m.id))
+    const prepend = buf.messages.filter((m) => !seen.has(m.id))
+    return {
+      ...t,
+      messages: [...prepend, ...t.messages],
+      hasOlder: buf.hasOlder,
+      oldestCursor: buf.oldestCursor,
+    }
+  }
+
+  // Remonte l'historique d'une conversation (appele quand le repere en haut
+  // de la liste devient visible). Fusionne instantanement si le prefetch est
+  // deja pret ; sinon attend la fin du prefetch en cours (rare, scroll tres
+  // rapide sur une conversation qui vient d'ouvrir).
   const loadOlderMessages = useCallback(() => {
     if (modeRef.current !== 'live') return // le mode demo n'a pas de pagination
     setActiveThread((current) => {
-      if (!current || !current.hasOlder || !current.oldestCursor || olderLoading) {
-        return current
+      if (!current || !current.hasOlder) return current
+      const buf = olderBufferRef.current
+
+      if (buf && buf.threadId === current.id) {
+        olderBufferRef.current = null
+        const next = mergeOlder(current, buf)
+        if (buf.hasOlder && buf.oldestCursor) prefetchOlder(current.id, buf.oldestCursor)
+        return next
       }
-      const threadId = current.id
-      const cursor = current.oldestCursor
-      setOlderLoading(true)
-      api
-        .thread(threadId, cursor)
-        .then(({ thread: older }) => {
+
+      // Pas encore pret : on affiche un court chargement et on fusionne des
+      // que le prefetch en cours (ou qu'on vient de lancer) se termine.
+      if (current.oldestCursor) {
+        setOlderLoading(true)
+        prefetchOlder(current.id, current.oldestCursor).then(() => {
           setActiveThread((t) => {
-            if (!t || t.id !== threadId) return t
-            const seen = new Set(t.messages.map((m) => m.id))
-            const prepend = older.messages.filter((m) => !seen.has(m.id))
-            return {
-              ...t,
-              messages: [...prepend, ...t.messages],
-              hasOlder: older.hasOlder,
-              oldestCursor: older.oldestCursor,
-            }
+            if (!t) return t
+            const b = olderBufferRef.current
+            if (!b || b.threadId !== t.id) return t
+            olderBufferRef.current = null
+            if (b.hasOlder && b.oldestCursor) prefetchOlder(t.id, b.oldestCursor)
+            return mergeOlder(t, b)
           })
+          setOlderLoading(false)
         })
-        .catch((e) => {
-          setError(
-            e instanceof ApiError ? e.message : "Impossible de charger l'historique.",
-          )
-        })
-        .finally(() => setOlderLoading(false))
+      }
       return current
     })
-  }, [olderLoading])
+  }, [prefetchOlder])
 
   const sendMessage = useCallback(
     (text: string) => {
