@@ -30,14 +30,23 @@ const META_ICON: Record<string, typeof ImageIcon> = {
 function MessageRow({
   message,
   sender,
+  senderOf,
   grouped,
 }: {
   message: Message
   sender: User
+  senderOf: (id: string) => User
   grouped: boolean
 }) {
   if (message.itemType === 'system') {
     return <div className="msg-system">{message.text}</div>
+  }
+  if (message.itemType === 'reaction_log') {
+    return (
+      <div className="msg-system reaction">
+        <Heart size={13} fill="currentColor" /> {message.text}
+      </div>
+    )
   }
 
   const Icon = META_ICON[message.itemType]
@@ -89,6 +98,20 @@ function MessageRow({
           )
         )}
 
+        {message.reactions && message.reactions.length > 0 && (
+          <div className="msg-reactions">
+            {message.reactions.map((r, i) => (
+              <span
+                key={i}
+                className="msg-reaction-pill"
+                title={senderOf(r.senderId).username}
+              >
+                {r.emoji}
+              </span>
+            ))}
+          </div>
+        )}
+
         {message.failed && (
           <div className="msg-failed">
             <TriangleAlert size={13} /> Non envoye (Instagram a refuse le
@@ -134,7 +157,10 @@ export function DMView() {
           loadOlderMessages()
         }
       },
-      { root: container, rootMargin: '200px' },
+      // Marge large : on declenche le chargement bien avant que le repere ne
+      // soit visible, pour laisser le temps au prefetch de finir sans que
+      // l'utilisateur ne voie jamais de trou pendant un defilement rapide.
+      { root: container, rootMargin: '1200px' },
     )
     io.observe(el)
     return () => io.disconnect()
@@ -241,6 +267,7 @@ export function DMView() {
                     key={m.id}
                     message={m}
                     sender={fallbackUser(m.senderId)}
+                    senderOf={fallbackUser}
                     grouped={grouped}
                   />
                 )

@@ -1,4 +1,4 @@
-import { BadgeCheck, Heart, MessageCircle } from 'lucide-react'
+import { BadgeCheck, ExternalLink, Heart, MessageCircle } from 'lucide-react'
 import type { Post } from '../types'
 import { Avatar } from './Avatar'
 import { generatePostImage } from '../lib/avatars'
@@ -13,9 +13,11 @@ interface Props {
 
 // Vignette d'une publication/reel : image + compteurs, facon apercu Discord
 // d'un lien. Reutilisee dans le fil (PostMessage) et pour les publications
-// partagees en messages prives.
+// partagees en messages prives. Le clic ouvre la vraie publication sur
+// Instagram dans le navigateur par defaut (via le lien permanent /p/<code>/).
 export function PostEmbedCard({ post, showAuthor = false }: Props) {
   const img = post.imageUrl ?? generatePostImage(post.id + post.author.username)
+
   return (
     <div className="post-embed">
       {showAuthor && (
@@ -27,13 +29,36 @@ export function PostEmbedCard({ post, showAuthor = false }: Props) {
           )}
         </div>
       )}
-      <img
-        className="pe-media"
-        src={img}
-        alt={`Publication de ${post.author.username}`}
-        loading="lazy"
-      />
+
+      {post.permalink ? (
+        <a
+          className="pe-media-link"
+          href={post.permalink}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Ouvrir sur Instagram"
+        >
+          <img
+            className="pe-media"
+            src={img}
+            alt={`Publication de ${post.author.username}`}
+            loading="lazy"
+          />
+          <span className="pe-open-overlay">
+            <ExternalLink size={14} /> Ouvrir sur Instagram
+          </span>
+        </a>
+      ) : (
+        <img
+          className="pe-media"
+          src={img}
+          alt={`Publication de ${post.author.username}`}
+          loading="lazy"
+        />
+      )}
+
       {showAuthor && post.caption && <div className="pe-caption">{post.caption}</div>}
+
       <div className="pe-footer">
         <span className="pe-stat like">
           <Heart size={16} /> {formatCount(post.likeCount)}
@@ -41,6 +66,16 @@ export function PostEmbedCard({ post, showAuthor = false }: Props) {
         <span className="pe-stat">
           <MessageCircle size={16} /> {formatCount(post.commentCount)}
         </span>
+        {post.permalink && (
+          <a
+            className="pe-stat pe-external"
+            href={post.permalink}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <ExternalLink size={14} /> Voir sur Instagram
+          </a>
+        )}
       </div>
     </div>
   )

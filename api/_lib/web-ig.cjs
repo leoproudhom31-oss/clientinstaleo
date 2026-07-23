@@ -35,7 +35,11 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
     'X-IG-App-ID': APP_ID,
     'X-CSRFToken': session.csrftoken || '',
     'X-Requested-With': 'XMLHttpRequest',
-    'X-IG-WWW-Claim': '0',
+    // Instagram emet ce "claim" apres chaque requete et attend qu'on le
+    // renvoie tel quel ensuite ; c'est requis par les endpoints qui MODIFIENT
+    // quelque chose (envoi de message, etc.) — sans lui, ils peuvent echouer
+    // silencieusement (reponse 200 avec status "fail").
+    'X-IG-WWW-Claim': session.wwwClaim || '0',
     Referer: `${BASE}/`,
     Origin: BASE,
     Cookie: session.cookieHeader,
@@ -48,6 +52,13 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
   }
 
   const res = await fetch(url, { method, headers, body })
+
+  // Instagram renvoie un nouveau claim a chaque reponse : on le memorise pour
+  // les appels suivants (mutation directe de l'objet session, qui est la meme
+  // reference que celle conservee par desktop-session tant que le process vit).
+  const claim = res.headers.get('x-ig-set-www-claim')
+  if (claim && claim !== '0') session.wwwClaim = claim
+
   const text = await res.text()
   let data = null
   try {
@@ -56,10 +67,15 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
     /* reponse non-JSON (page de login, etc.) */
   }
 
+  // "fail" peut arriver avec un statut HTTP 200 : Instagram signale l'echec
+  // dans le corps de la reponse, pas via le code HTTP. Sans cette detection,
+  // un envoi refuse par Instagram serait pris pour une reussite.
+  const appFailed = data?.status === 'fail'
+
   // Journalise les echecs dans le terminal (npm start) pour diagnostic.
-  if (!res.ok || !data) {
+  if (!res.ok || !data || appFailed) {
     console.warn(
-      `[web-ig] ${method} ${url} -> ${res.status} ${res.statusText} | ${text.slice(0, 180)}`,
+      `[web-ig] ${method} ${url} -> ${res.status} ${res.statusText}${appFailed ? ' (status=fail)' : ''} | ${text.slice(0, 220)}`,
     )
   }
 
@@ -80,7 +96,7 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
     e.code = 'ua_mismatch'
     throw e
   }
-  if (!res.ok || !data) {
+  if (!res.ok || !data || appFailed) {
     const e = new Error(data?.message || `Erreur Instagram (${res.status})`)
     e.code = 'ig_error'
     throw e
@@ -168,7 +184,7 @@ async function thread(session, id, { cursor } = {}) {
 
 async function send(session, threadId, text) {
   const ctx = uuid()
-  await webRequest(session, '/api/v1/direct_v2/threads/broadcast/text/', {
+  const data = await webRequest(session, '/api/v1/direct_v2/threads/broadcast/text/', {
     method: 'POST',
     form: {
       action: 'send_item',
@@ -178,8 +194,11 @@ async function send(session, threadId, text) {
       offline_threading_id: ctx,
     },
   })
+  // webRequest a deja leve une erreur si data.status === 'fail' : arriver ici
+  // signifie qu'Instagram a accepte et diffuse le message.
+  const item = data?.payload || data?.payload?.[0]
   return {
-    id: ctx,
+    id: String(item?.item_id || ctx),
     senderId: String(session.dsUserId || ''),
     text,
     timestamp: Math.floor(Date.now() / 1000),

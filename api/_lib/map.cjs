@@ -46,6 +46,9 @@ function mapPost(item) {
     likeCount: Number(item.like_count) || 0,
     commentCount: Number(item.comment_count) || 0,
     location: item.location?.name ?? null,
+    // /p/<code>/ resout correctement aussi bien une publication qu'un reel :
+    // c'est le format de lien permanent le plus fiable.
+    permalink: item.code ? `https://www.instagram.com/p/${item.code}/` : null,
   }
 }
 
@@ -117,9 +120,14 @@ function shareEmbed(item) {
   return null
 }
 
+// Reconnait une entree de journal decrivant une reaction ("X reacted 😂 to
+// your message" / variantes localisees) pour lui donner une icone dediee au
+// lieu du traitement generique des evenements systeme.
+const REACTION_LOG_RE = /react/i
+
 // Determine la categorie d'un item de conversation + son libelle d'affichage.
 // Categories utilisees par l'UI : text | like | media | share | call | system
-// | unsupported.
+// | reaction_log | unsupported.
 function describeItem(item) {
   if (!item) return { itemType: 'text', text: '' }
   const raw = item.item_type
@@ -134,9 +142,10 @@ function describeItem(item) {
     return { itemType: 'call', text: '📞 Appel' }
   }
   if (raw === 'action_log') {
+    const description = item.action_log?.description || 'Evenement de la conversation'
     return {
-      itemType: 'system',
-      text: item.action_log?.description || 'Evenement de la conversation',
+      itemType: REACTION_LOG_RE.test(description) ? 'reaction_log' : 'system',
+      text: description,
     }
   }
   if (raw === 'placeholder') {
@@ -165,8 +174,23 @@ function tsSeconds(micro) {
   return Math.floor(n / 1_000_000)
 }
 
+// Reactions emoji attachees DIRECTEMENT a ce message (contrairement aux
+// entrees action_log ci-dessus, qui sont des lignes de journal separees) :
+// Instagram les expose sous item.reactions.emojis quand le message reagi est
+// encore recent. On les affiche comme des pastilles sous la bulle concernee,
+// comme le ferait Discord ou Messenger.
+function mapReactions(item) {
+  const emojis = item?.reactions?.emojis
+  if (!Array.isArray(emojis) || emojis.length === 0) return undefined
+  return emojis.map((r) => ({
+    senderId: String(r.sender_id ?? ''),
+    emoji: r.emoji || '❤️',
+  }))
+}
+
 function mapMessage(item) {
   const { itemType, text, embed } = describeItem(item)
+  const reactions = mapReactions(item)
   return {
     id: String(item.item_id ?? item.timestamp ?? Math.random()),
     senderId: String(item.user_id ?? ''),
@@ -174,6 +198,7 @@ function mapMessage(item) {
     timestamp: tsSeconds(item.timestamp),
     itemType,
     ...(embed ? { embed } : {}),
+    ...(reactions ? { reactions } : {}),
   }
 }
 

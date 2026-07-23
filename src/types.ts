@@ -18,6 +18,8 @@ export interface Post {
   likeCount: number
   commentCount: number
   location?: string | null
+  /** Lien vers la vraie publication sur Instagram, si connu. */
+  permalink?: string | null
 }
 
 export interface ThreadPreview {
@@ -37,7 +39,13 @@ export type MessageItemType =
   | 'share'
   | 'call'
   | 'system'
+  | 'reaction_log'
   | 'unsupported'
+
+export interface MessageReaction {
+  senderId: string
+  emoji: string
+}
 
 export interface Message {
   id: string
@@ -50,6 +58,8 @@ export interface Message {
   failed?: boolean
   /** Apercu (image, legende, auteur) pour une publication/reel partage. */
   embed?: Post | null
+  /** Reactions emoji attachees a ce message precis. */
+  reactions?: MessageReaction[]
 }
 
 export interface Thread extends ThreadPreview {
