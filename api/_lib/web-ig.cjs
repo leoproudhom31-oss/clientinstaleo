@@ -92,7 +92,7 @@ function mergeSetCookie(session, res) {
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308])
 const MAX_REDIRECTS = 6
 
-async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
+async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } = {}) {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${BASE}${pathOrUrl}`
   let body
   const buildHeaders = () => {
@@ -106,7 +106,11 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
       // quelque chose (envoi de message...) — sans lui, ils peuvent echouer
       // silencieusement (reponse 200 avec status "fail").
       'X-IG-WWW-Claim': session.wwwClaim || '0',
-      Referer: `${BASE}/`,
+      // Pour une action precise (ex : envoyer un message dans une
+      // conversation), pointer le Referer sur la vraie page concernee plutot
+      // que sur l'accueil colle davantage au comportement d'un navigateur, ce
+      // qu'Instagram verifie parfois pour les requetes qui modifient quelque chose.
+      Referer: referer || `${BASE}/`,
       Origin: BASE,
       Cookie: session.cookieHeader,
       Accept: '*/*',
@@ -135,7 +139,20 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
     if (!REDIRECT_STATUS.has(res.status)) break
 
     const location = res.headers.get('location') || ''
-    if (/\/accounts\/login|\/challenge/i.test(location)) {
+    if (/\/challenge/i.test(location)) {
+      console.warn(
+        `[web-ig] ${method} ${url} -> redirige vers un challenge (location=${location.slice(0, 100)})`,
+      )
+      const e = new Error(
+        'Instagram demande une verification pour cette action (checkpoint). Ouvre l’app officielle, confirme, puis reessaie.',
+      )
+      e.code = 'checkpoint'
+      throw e
+    }
+    if (/\/accounts\/login/i.test(location)) {
+      console.warn(
+        `[web-ig] ${method} ${url} -> redirige vers la connexion (location=${location.slice(0, 100)}) | csrftoken present=${Boolean(session.csrftoken)} wwwClaim=${session.wwwClaim || '(aucun)'}`,
+      )
       const e = new Error('Session Instagram expiree. Deconnecte-toi puis reconnecte-toi.')
       e.code = 'expired'
       throw e
@@ -263,7 +280,9 @@ async function thread(session, id, { cursor } = {}) {
     `?visual_message_return_type=unseen&direction=older&media_count=0&limit=25`
   if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`
 
-  const data = await webRequest(session, url)
+  const data = await webRequest(session, url, {
+    referer: `${BASE}/direct/t/${encodeURIComponent(id)}/`,
+  })
   const t = data.thread || {}
   const selfPk = session.dsUserId
   const others = (t.users || []).filter((u) => String(u.pk) !== String(selfPk))
@@ -298,6 +317,7 @@ async function send(session, threadId, text) {
       client_context: ctx,
       offline_threading_id: ctx,
     },
+    referer: `${BASE}/direct/t/${encodeURIComponent(threadId)}/`,
   })
   // webRequest a deja leve une erreur si data.status === 'fail' : arriver ici
   // signifie qu'Instagram a accepte et diffuse le message.
