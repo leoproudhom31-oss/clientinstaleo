@@ -4,6 +4,7 @@
 
 import type {
   Message,
+  Notification,
   Post,
   Reel,
   StoryItem,
@@ -143,6 +144,15 @@ export const api = {
   saved(maxId?: string): Promise<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }> {
     const qs = maxId ? `?maxId=${encodeURIComponent(maxId)}` : ''
     return call<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }>(`saved${qs}`)
+  },
+
+  explore(maxId?: string): Promise<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }> {
+    const qs = maxId ? `?maxId=${encodeURIComponent(maxId)}` : ''
+    return call<{ posts: Post[]; hasMore: boolean; nextMaxId: string | null }>(`explore${qs}`)
+  },
+
+  notifications(): Promise<{ notifications: Notification[] }> {
+    return call<{ notifications: Notification[] }>('notifications')
   },
 
   inbox(): Promise<{ threads: ThreadPreview[] }> {

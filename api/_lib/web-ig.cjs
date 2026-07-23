@@ -416,6 +416,59 @@ async function saved(session, { maxId } = {}) {
   }
 }
 
+// Collecte recursivement les objets "media" dans une reponse (utilise pour
+// l'explore, dont la structure sectionnee est imbriquee et variable).
+function collectMedia(node, out, seen, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > 7) return
+  if (Array.isArray(node)) {
+    for (const x of node) collectMedia(x, out, seen, depth + 1)
+    return
+  }
+  // Un media a un identifiant, un auteur et des versions d'image.
+  if (node.image_versions2 && node.user && (node.pk || node.id)) {
+    const id = String(node.id || node.pk)
+    if (!seen.has(id)) {
+      seen.add(id)
+      out.push(node)
+    }
+    return
+  }
+  for (const k of Object.keys(node)) collectMedia(node[k], out, seen, depth + 1)
+}
+
+// Grille "Explorer" (decouverte). L'API renvoie des sections imbriquees ; on
+// en extrait tous les medias.
+async function explore(session, { maxId } = {}) {
+  let url =
+    '/api/v1/discover/web/explore_grid/?is_prefetch=false&omit_cover_media=true' +
+    '&use_sectional_payload=true&timezone_offset=0&include_fixed_destinations=false'
+  if (maxId) url += `&max_id=${encodeURIComponent(maxId)}`
+  const data = await webRequest(session, url)
+  const medias = []
+  collectMedia(data.sectional_items || data.items || data, medias, new Set())
+  const posts = medias.map(map.mapPost)
+  console.log(
+    `[web-ig] explore() : ${medias.length} medias -> ${posts.length} publications | hasMore=${Boolean(data.more_available)}`,
+  )
+  return {
+    posts,
+    hasMore: Boolean(data.more_available),
+    nextMaxId: data.next_max_id || data.max_id || null,
+  }
+}
+
+// Fil d'activite (j'aime, commentaires, abonnements) via news/inbox.
+async function notifications(session) {
+  const data = await webRequest(session, '/api/v1/news/inbox/')
+  const stories = [...(data.new_stories || []), ...(data.old_stories || [])]
+  const list = stories
+    .map(map.mapNotification)
+    .filter((n) => n.text)
+    .sort((a, b) => b.timestamp - a.timestamp)
+  console.log(`[web-ig] notifications() : ${stories.length} entrees -> ${list.length} affichees`)
+  return list
+}
+
 async function inbox(session) {
   const data = await webRequest(
     session,
@@ -546,4 +599,6 @@ module.exports = {
   storyReel,
   reels,
   saved,
+  explore,
+  notifications,
 }

@@ -54,6 +54,15 @@ export interface StoryTray {
   takenAt: number
 }
 
+export interface Notification {
+  id: string
+  text: string
+  timestamp: number
+  profilePic: string | null
+  thumbnail: string | null
+  profileId: string
+}
+
 export interface ThreadPreview {
   id: string
   title: string

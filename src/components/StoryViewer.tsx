@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import type { StoryItem, StoryTray } from '../types'
 import { Avatar } from './Avatar'
 import { formatRelative } from '../lib/format'
+import { useStore } from '../state/store'
 
 const IMAGE_DURATION = 5000 // ms par photo
 const DEFAULT_VIDEO_DURATION = 10000 // repli si la duree video est inconnue
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function StoryViewer({ trays, initialTray, onClose, loadItems }: Props) {
+  const { openUserProfile } = useStore()
   const [trayIndex, setTrayIndex] = useState(initialTray)
   const [itemIndex, setItemIndex] = useState(0)
   const [items, setItems] = useState<StoryItem[]>(trays[initialTray]?.items ?? [])
@@ -148,8 +150,15 @@ export function StoryViewer({ trays, initialTray, onClose, loadItems }: Props) {
           ))}
         </div>
 
-        {/* En-tete : compte + heure */}
-        <div className="story-head">
+        {/* En-tete : compte + heure (cliquable -> fiche profil) */}
+        <div
+          className="story-head clickable"
+          onClick={() => {
+            openUserProfile(tray.user)
+            onClose()
+          }}
+          title={`Voir le profil de ${tray.user.username}`}
+        >
           <Avatar user={tray.user} size={34} />
           <div className="story-head-text">
             <span className="story-head-name">{tray.user.username}</span>

@@ -298,6 +298,21 @@ function mapStoryTray(tray) {
   }
 }
 
+// Une entree du fil d'activite (news/inbox) : j'aime, commentaire, abonnement.
+// Instagram fournit le texte deja localise dans args.text.
+function mapNotification(story) {
+  const a = story.args || story || {}
+  const media = Array.isArray(a.media) ? a.media[0] : null
+  return {
+    id: String(story.pk ?? a.tuuid ?? a.timestamp ?? Math.random()),
+    text: a.text || '',
+    timestamp: Number(a.timestamp) || 0,
+    profilePic: imgProxy(a.profile_image),
+    thumbnail: media ? imgProxy(media.image) : null,
+    profileId: String(a.profile_id ?? ''),
+  }
+}
+
 function mapThreadPreview(t, selfPk) {
   const others = (t.users || []).filter((u) => String(u.pk) !== String(selfPk))
   const last = (t.items && t.items[0]) || t.last_permanent_item
@@ -329,6 +344,7 @@ module.exports = {
   mapReel,
   extractClip,
   mapProfile,
+  mapNotification,
   tsSeconds,
   MEDIA_TYPES,
   SHARE_TYPES,

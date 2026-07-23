@@ -10,6 +10,7 @@ import {
 } from 'react'
 import type {
   Message,
+  Notification,
   Post,
   Reel,
   SpaceId,
@@ -63,6 +64,15 @@ interface Store {
   savedLoadingMore: boolean
   loadMoreSaved: () => void
 
+  explore: Post[]
+  exploreLoading: boolean
+  exploreLoadingMore: boolean
+  loadMoreExplore: () => void
+
+  notifications: Notification[]
+  notificationsLoading: boolean
+  refreshNotifications: () => void
+
   threads: ThreadPreview[]
   threadsLoading: boolean
   refreshInbox: () => void
@@ -93,6 +103,42 @@ interface Store {
   onLoggedIn: (user: User) => void
   logout: () => void
   switchToDemo: () => void
+}
+
+// Fusionne la page la plus recente d'une conversation (obtenue par polling)
+// dans le thread affiche : ajoute les messages recus depuis, et "reconcilie"
+// nos propres messages optimistes (local-/page_) avec leur version serveur pour
+// eviter les doublons.
+function mergeNewest(t: Thread, newest: Message[], mePk: string): Thread {
+  const existing = new Set(t.messages.map((m) => m.id))
+  let messages = t.messages
+  const toAppend: Message[] = []
+  let reconciled = false
+  for (const nm of newest) {
+    if (existing.has(nm.id)) continue
+    if (String(nm.senderId) === String(mePk)) {
+      const idx = messages.findIndex(
+        (m) =>
+          (m.id.startsWith('local-') || m.id.startsWith('page_')) &&
+          String(m.senderId) === String(mePk) &&
+          (m.text || '') === (nm.text || ''),
+      )
+      if (idx !== -1) {
+        messages = messages.map((m, i) => (i === idx ? { ...nm } : m))
+        reconciled = true
+        continue
+      }
+    }
+    toAppend.push(nm)
+  }
+  if (!toAppend.length && !reconciled) return t
+  return {
+    ...t,
+    messages: [...messages, ...toAppend],
+    lastActivity: toAppend.length
+      ? toAppend[toAppend.length - 1].timestamp
+      : t.lastActivity,
+  }
 }
 
 const StoreContext = createContext<Store | null>(null)
@@ -130,6 +176,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [savedLoadingMore, setSavedLoadingMore] = useState(false)
   const [savedHasMore, setSavedHasMore] = useState(false)
   const [savedMaxId, setSavedMaxId] = useState<string | null>(null)
+
+  const [explore, setExplore] = useState<Post[]>([])
+  const [exploreLoading, setExploreLoading] = useState(false)
+  const [exploreLoadingMore, setExploreLoadingMore] = useState(false)
+  const [exploreHasMore, setExploreHasMore] = useState(false)
+  const [exploreMaxId, setExploreMaxId] = useState<string | null>(null)
+
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
 
   const [threads, setThreads] = useState<ThreadPreview[]>([])
   const [threadsLoading, setThreadsLoading] = useState(false)
@@ -326,6 +381,70 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSavedLoadingMore(false)
     }
   }, [savedHasMore, savedMaxId, savedLoadingMore])
+
+  const loadExplore = useCallback(async (m: Mode) => {
+    setExploreLoading(true)
+    setError(null)
+    setErrorCode(undefined)
+    try {
+      if (m === 'demo') {
+        setExplore(demoFeed)
+        setExploreHasMore(false)
+        setExploreMaxId(null)
+      } else {
+        const { posts, hasMore, nextMaxId } = await api.explore()
+        setExplore(posts)
+        setExploreHasMore(hasMore)
+        setExploreMaxId(nextMaxId)
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Erreur lors du chargement de l'explorateur.")
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
+      setExplore([])
+      setExploreHasMore(false)
+      setExploreMaxId(null)
+    } finally {
+      setExploreLoading(false)
+    }
+  }, [])
+
+  const loadMoreExplore = useCallback(async () => {
+    if (modeRef.current !== 'live' || !exploreHasMore || !exploreMaxId || exploreLoadingMore) return
+    setExploreLoadingMore(true)
+    try {
+      const { posts, hasMore, nextMaxId } = await api.explore(exploreMaxId)
+      setExplore((prev) => {
+        const seen = new Set(prev.map((p) => p.id))
+        return [...prev, ...posts.filter((p) => !seen.has(p.id))]
+      })
+      setExploreHasMore(hasMore)
+      setExploreMaxId(nextMaxId)
+    } catch {
+      /* on garde ce qui est deja affiche */
+    } finally {
+      setExploreLoadingMore(false)
+    }
+  }, [exploreHasMore, exploreMaxId, exploreLoadingMore])
+
+  const loadNotifications = useCallback(async (m: Mode) => {
+    setNotificationsLoading(true)
+    setError(null)
+    setErrorCode(undefined)
+    try {
+      if (m === 'demo') {
+        setNotifications([])
+      } else {
+        const { notifications: n } = await api.notifications()
+        setNotifications(n)
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement des notifications.')
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
+      setNotifications([])
+    } finally {
+      setNotificationsLoading(false)
+    }
+  }, [])
 
   const prefetchMoreFeed = useCallback((maxId: string) => {
     if (feedFetchRef.current) return feedFetchRef.current
@@ -564,6 +683,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [activeThread, me.pk],
   )
 
+  // Rafraichissement en direct de la conversation ouverte : on interroge
+  // periodiquement la page la plus recente et on fusionne les nouveaux messages.
+  // Sans ca, on n'a jamais les messages recus tant qu'on ne rouvre pas le thread.
+  useEffect(() => {
+    if (mode !== 'live' || !activeThreadId) return
+    let stopped = false
+    const poll = async () => {
+      try {
+        const { thread: fresh } = await api.thread(activeThreadId)
+        if (stopped) return
+        setActiveThread((t) => (t && t.id === activeThreadId ? mergeNewest(t, fresh.messages, me.pk) : t))
+        // Met a jour l'apercu de la conversation dans la liste de gauche.
+        setThreads((prev) =>
+          prev.map((p) =>
+            p.id === activeThreadId
+              ? { ...p, lastMessage: fresh.lastMessage, lastActivity: fresh.lastActivity, unread: false }
+              : p,
+          ),
+        )
+      } catch {
+        /* transitoire : on reessaiera au prochain tick */
+      }
+    }
+    const id = window.setInterval(poll, 5000)
+    return () => {
+      stopped = true
+      window.clearInterval(id)
+    }
+  }, [mode, activeThreadId, me.pk])
+
   // Charge les donnees quand on change d'espace (ou de canal du fil).
   useEffect(() => {
     if (space === 'feed') {
@@ -573,11 +722,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       else loadFeed(mode)
     }
     if (space === 'direct') loadInbox(mode)
-  }, [space, feedChannel, mode, loadFeed, loadInbox, loadStories, loadReels, loadSaved])
+    if (space === 'explore') loadExplore(mode)
+    if (space === 'notifications') loadNotifications(mode)
+  }, [
+    space, feedChannel, mode, loadFeed, loadInbox, loadStories, loadReels,
+    loadSaved, loadExplore, loadNotifications,
+  ])
 
   const refreshFeed = useCallback(() => loadFeed(modeRef.current), [loadFeed])
   const refreshInbox = useCallback(() => loadInbox(modeRef.current), [loadInbox])
   const refreshStories = useCallback(() => loadStories(modeRef.current), [loadStories])
+  const refreshNotifications = useCallback(
+    () => loadNotifications(modeRef.current),
+    [loadNotifications],
+  )
 
   // Au demarrage : detecte une session "live" existante (cookie), sinon demo.
   useEffect(() => {
@@ -646,6 +804,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       savedLoading,
       savedLoadingMore,
       loadMoreSaved,
+      explore,
+      exploreLoading,
+      exploreLoadingMore,
+      loadMoreExplore,
+      notifications,
+      notificationsLoading,
+      refreshNotifications,
       threads,
       threadsLoading,
       refreshInbox,
@@ -675,7 +840,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mode, me, space, feedChannel, feed, feedLoading, feedLoadingMore,
       refreshFeed, loadMoreFeed, stories, storiesLoading, refreshStories,
       loadStoryItems, reels, reelsLoading, reelsLoadingMore, loadMoreReels,
-      saved, savedLoading, savedLoadingMore, loadMoreSaved, threads,
+      saved, savedLoading, savedLoadingMore, loadMoreSaved,
+      explore, exploreLoading, exploreLoadingMore, loadMoreExplore,
+      notifications, notificationsLoading, refreshNotifications, threads,
       threadsLoading, refreshInbox,
       activeThreadId, activeThread, threadLoading, olderLoading, openThread,
       loadOlderMessages, sendMessage,
