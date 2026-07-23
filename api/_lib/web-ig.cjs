@@ -55,36 +55,104 @@ async function fetchResilient(url, opts, attempts = 3, delayMs = 900) {
   throw e
 }
 
+// Instagram pose des cookies de routage regional (rur, ig-u-rur...) via des
+// redirections. fetch() de Node ne conserve PAS les Set-Cookie a travers une
+// redirection : sans intervention, la meme redirection se repete a l'infini
+// ("redirect count exceeded"). On fusionne donc nous-memes chaque Set-Cookie
+// dans la session, comme le ferait un navigateur.
+function mergeSetCookie(session, res) {
+  let list = []
+  if (typeof res.headers.getSetCookie === 'function') list = res.headers.getSetCookie()
+  else {
+    const sc = res.headers.get('set-cookie')
+    if (sc) list = [sc]
+  }
+  if (!list.length) return
+
+  const jar = new Map()
+  for (const part of (session.cookieHeader || '').split(/;\s*/)) {
+    const i = part.indexOf('=')
+    if (i > 0) jar.set(part.slice(0, i).trim(), part.slice(i + 1))
+  }
+  for (const sc of list) {
+    const first = sc.split(';')[0]
+    const i = first.indexOf('=')
+    if (i > 0) {
+      const k = first.slice(0, i).trim()
+      const v = first.slice(i + 1).trim()
+      // Une valeur vide ("deleted"/'""') signifie suppression du cookie.
+      if (v && v !== '""') jar.set(k, v)
+      else jar.delete(k)
+    }
+  }
+  session.cookieHeader = [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ')
+  if (jar.has('csrftoken')) session.csrftoken = jar.get('csrftoken')
+}
+
+const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308])
+const MAX_REDIRECTS = 6
+
 async function webRequest(session, pathOrUrl, { method = 'GET', form } = {}) {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${BASE}${pathOrUrl}`
-  const headers = {
-    'User-Agent': session.userAgent || FALLBACK_UA,
-    'X-IG-App-ID': APP_ID,
-    'X-CSRFToken': session.csrftoken || '',
-    'X-Requested-With': 'XMLHttpRequest',
-    // Instagram emet ce "claim" apres chaque requete et attend qu'on le
-    // renvoie tel quel ensuite ; c'est requis par les endpoints qui MODIFIENT
-    // quelque chose (envoi de message, etc.) — sans lui, ils peuvent echouer
-    // silencieusement (reponse 200 avec status "fail").
-    'X-IG-WWW-Claim': session.wwwClaim || '0',
-    Referer: `${BASE}/`,
-    Origin: BASE,
-    Cookie: session.cookieHeader,
-    Accept: '*/*',
-  }
   let body
-  if (form) {
-    headers['Content-Type'] = 'application/x-www-form-urlencoded'
-    body = new URLSearchParams(form).toString()
+  const buildHeaders = () => {
+    const h = {
+      'User-Agent': session.userAgent || FALLBACK_UA,
+      'X-IG-App-ID': APP_ID,
+      'X-CSRFToken': session.csrftoken || '',
+      'X-Requested-With': 'XMLHttpRequest',
+      // Instagram emet ce "claim" apres chaque requete et attend qu'on le
+      // renvoie tel quel ensuite ; requis par les endpoints qui MODIFIENT
+      // quelque chose (envoi de message...) — sans lui, ils peuvent echouer
+      // silencieusement (reponse 200 avec status "fail").
+      'X-IG-WWW-Claim': session.wwwClaim || '0',
+      Referer: `${BASE}/`,
+      Origin: BASE,
+      Cookie: session.cookieHeader,
+      Accept: '*/*',
+    }
+    if (form) h['Content-Type'] = 'application/x-www-form-urlencoded'
+    return h
   }
+  if (form) body = new URLSearchParams(form).toString()
 
-  const res = await fetchResilient(url, { method, headers, body })
+  // Boucle de redirection geree a la main : sur un 3xx, on absorbe les cookies
+  // de routage puis on rejoue la MEME requete (methode + corps preserves) avec
+  // les cookies a jour, jusqu'a obtenir une vraie reponse.
+  let res
+  for (let redirects = 0; ; redirects++) {
+    res = await fetchResilient(url, {
+      method,
+      headers: buildHeaders(),
+      body,
+      redirect: 'manual',
+    })
 
-  // Instagram renvoie un nouveau claim a chaque reponse : on le memorise pour
-  // les appels suivants (mutation directe de l'objet session, qui est la meme
-  // reference que celle conservee par desktop-session tant que le process vit).
-  const claim = res.headers.get('x-ig-set-www-claim')
-  if (claim && claim !== '0') session.wwwClaim = claim
+    const claim = res.headers.get('x-ig-set-www-claim')
+    if (claim && claim !== '0') session.wwwClaim = claim
+    mergeSetCookie(session, res)
+
+    if (!REDIRECT_STATUS.has(res.status)) break
+
+    const location = res.headers.get('location') || ''
+    if (/\/accounts\/login|\/challenge/i.test(location)) {
+      const e = new Error('Session Instagram expiree. Deconnecte-toi puis reconnecte-toi.')
+      e.code = 'expired'
+      throw e
+    }
+    if (redirects >= MAX_REDIRECTS) {
+      console.warn(
+        `[web-ig] ${method} ${url} -> boucle de redirection (location=${location.slice(0, 80)})`,
+      )
+      const e = new Error(
+        'Instagram redirige la requete en boucle (routage de session). Deconnecte-toi puis reconnecte-toi.',
+      )
+      e.code = 'redirect_loop'
+      throw e
+    }
+    // On consomme le corps de la redirection pour liberer la connexion.
+    await res.arrayBuffer().catch(() => {})
+  }
 
   const text = await res.text()
   let data = null

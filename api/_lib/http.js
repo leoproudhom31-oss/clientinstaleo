@@ -31,7 +31,13 @@ function json(res, status, payload) {
 function apiError(res, e) {
   const code = e?.code
   let status = 502
-  if (code === 'expired' || code === 'checkpoint' || code === 'ua_mismatch') status = 401
+  if (
+    code === 'expired' ||
+    code === 'checkpoint' ||
+    code === 'ua_mismatch' ||
+    code === 'redirect_loop'
+  )
+    status = 401
   else if (code === 'network') status = 503 // upstream injoignable, pas un rejet applicatif
   return json(res, status, {
     error: e?.message || 'Erreur cote Instagram.',

@@ -8,6 +8,7 @@ export function errorHint(code?: string): string | null {
       return 'Ta connexion internet semble indisponible ou instable. Reessaie dans un instant.'
     case 'expired':
     case 'ua_mismatch':
+    case 'redirect_loop':
       return 'Ta session a expire ou n’est plus valide. Deconnecte-toi puis reconnecte-toi.'
     case 'checkpoint':
       return "Instagram demande une verification. Ouvre l'app officielle, confirme, puis reessaie."
