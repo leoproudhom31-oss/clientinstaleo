@@ -9,6 +9,14 @@ function imgProxy(url) {
   return `/api/img?u=${encodeURIComponent(url)}`
 }
 
+// Comme imgProxy, mais pour les videos (stories video, reels) : passe par
+// /api/media qui supporte le streaming par plages (Range) et conserve le
+// type MIME d'origine. La page ne contacte jamais directement les CDN de Meta.
+function mediaProxy(url) {
+  if (!url) return null
+  return `/api/media?u=${encodeURIComponent(url)}`
+}
+
 function mapUser(u) {
   if (!u) return { pk: '', username: 'inconnu', fullName: '', avatarUrl: null }
   return {
@@ -202,6 +210,46 @@ function mapMessage(item) {
   }
 }
 
+// --- Stories -----------------------------------------------------------------
+
+function bestVideo(item) {
+  const v = item?.video_versions
+  return v && v.length ? v[0].url : null
+}
+
+// Un element de story (une photo ou une video de ~5-15 s). On expose toujours
+// une image (poster) — meme pour une video — pour un affichage immediat.
+function mapStoryItem(item) {
+  const isVideo = item?.media_type === 2 || (item?.video_versions?.length > 0)
+  return {
+    id: String(item.id ?? item.pk ?? Math.random()),
+    takenAt: Number(item.taken_at) || Math.floor(Date.now() / 1000),
+    isVideo: Boolean(isVideo),
+    imageUrl: imgProxy(firstImage(item)),
+    videoUrl: isVideo ? mediaProxy(bestVideo(item)) : null,
+    duration: Number(item.video_duration) || null,
+  }
+}
+
+// Une entree du carrousel de stories : un compte + ses stories du moment.
+function mapStoryTray(tray) {
+  const user = mapUser(tray.user)
+  const items = Array.isArray(tray.items) ? tray.items.map(mapStoryItem) : []
+  const seen =
+    tray.seen != null && tray.latest_reel_media != null
+      ? Number(tray.seen) >= Number(tray.latest_reel_media)
+      : false
+  return {
+    // reel_id = pk de l'utilisateur (sert a recharger les items a la demande).
+    id: String(tray.id ?? tray.user?.pk ?? user.pk),
+    user,
+    seen,
+    mediaCount: Number(tray.media_count) || items.length,
+    items,
+    takenAt: Number(tray.latest_reel_media) || 0,
+  }
+}
+
 function mapThreadPreview(t, selfPk) {
   const others = (t.users || []).filter((u) => String(u.pk) !== String(selfPk))
   const last = (t.items && t.items[0]) || t.last_permanent_item
@@ -220,6 +268,7 @@ function mapThreadPreview(t, selfPk) {
 
 module.exports = {
   imgProxy,
+  mediaProxy,
   mapUser,
   firstImage,
   extractMedia,
@@ -227,6 +276,8 @@ module.exports = {
   previewText,
   mapMessage,
   mapThreadPreview,
+  mapStoryItem,
+  mapStoryTray,
   tsSeconds,
   MEDIA_TYPES,
   SHARE_TYPES,

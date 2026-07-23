@@ -22,6 +22,26 @@ export interface Post {
   permalink?: string | null
 }
 
+export interface StoryItem {
+  id: string
+  takenAt: number
+  isVideo: boolean
+  imageUrl: string | null
+  videoUrl: string | null
+  /** Duree de la video en secondes, si connue (sinon l'UI utilise une valeur par defaut). */
+  duration: number | null
+}
+
+export interface StoryTray {
+  /** reel_id (= pk du compte), sert a recharger les items a la demande. */
+  id: string
+  user: User
+  seen: boolean
+  mediaCount: number
+  items: StoryItem[]
+  takenAt: number
+}
+
 export interface ThreadPreview {
   id: string
   title: string

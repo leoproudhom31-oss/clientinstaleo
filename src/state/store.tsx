@@ -8,11 +8,21 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { Message, Post, SpaceId, Thread, ThreadPreview, User } from '../types'
+import type {
+  Message,
+  Post,
+  SpaceId,
+  StoryItem,
+  StoryTray,
+  Thread,
+  ThreadPreview,
+  User,
+} from '../types'
 import { api, ApiError } from '../lib/api'
 import {
   demoFeed,
   demoMe,
+  demoStories,
   demoThreadById,
   demoThreadPreviews,
 } from '../lib/mock'
@@ -34,6 +44,11 @@ interface Store {
   feedLoadingMore: boolean
   refreshFeed: () => void
   loadMoreFeed: () => void
+
+  stories: StoryTray[]
+  storiesLoading: boolean
+  refreshStories: () => void
+  loadStoryItems: (reelId: string) => Promise<StoryItem[]>
 
   threads: ThreadPreview[]
   threadsLoading: boolean
@@ -82,6 +97,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [feedLoadingMore, setFeedLoadingMore] = useState(false)
   const [feedHasMore, setFeedHasMore] = useState(false)
   const [feedNextMaxId, setFeedNextMaxId] = useState<string | null>(null)
+
+  const [stories, setStories] = useState<StoryTray[]>([])
+  const [storiesLoading, setStoriesLoading] = useState(false)
 
   const [threads, setThreads] = useState<ThreadPreview[]>([])
   const [threadsLoading, setThreadsLoading] = useState(false)
@@ -151,6 +169,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setFeedLoading(false)
     }
   }, [])
+
+  const loadStories = useCallback(async (m: Mode) => {
+    setStoriesLoading(true)
+    setError(null)
+    setErrorCode(undefined)
+    try {
+      if (m === 'demo') {
+        setStories(demoStories())
+      } else {
+        const { trays } = await api.stories()
+        setStories(trays)
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement des stories.')
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
+      setStories([])
+    } finally {
+      setStoriesLoading(false)
+    }
+  }, [])
+
+  // Recupere a la demande les items d'une story (quand le carrousel ne les a
+  // pas deja fournis) et les memorise dans la tuile correspondante.
+  const loadStoryItems = useCallback(
+    async (reelId: string): Promise<StoryItem[]> => {
+      if (modeRef.current === 'demo') {
+        return demoStories().find((t) => t.id === reelId)?.items ?? []
+      }
+      const { items } = await api.storyReel(reelId)
+      setStories((prev) =>
+        prev.map((t) => (t.id === reelId ? { ...t, items } : t)),
+      )
+      return items
+    },
+    [],
+  )
 
   const prefetchMoreFeed = useCallback((maxId: string) => {
     if (feedFetchRef.current) return feedFetchRef.current
@@ -389,14 +443,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [activeThread, me.pk],
   )
 
-  // Charge les donnees quand on change d'espace.
+  // Charge les donnees quand on change d'espace (ou de canal du fil).
   useEffect(() => {
-    if (space === 'feed') loadFeed(mode)
+    if (space === 'feed') {
+      if (feedChannel === 'stories') loadStories(mode)
+      else loadFeed(mode)
+    }
     if (space === 'direct') loadInbox(mode)
-  }, [space, mode, loadFeed, loadInbox])
+  }, [space, feedChannel, mode, loadFeed, loadInbox, loadStories])
 
   const refreshFeed = useCallback(() => loadFeed(modeRef.current), [loadFeed])
   const refreshInbox = useCallback(() => loadInbox(modeRef.current), [loadInbox])
+  const refreshStories = useCallback(() => loadStories(modeRef.current), [loadStories])
 
   // Au demarrage : detecte une session "live" existante (cookie), sinon demo.
   useEffect(() => {
@@ -453,6 +511,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       feedLoadingMore,
       refreshFeed,
       loadMoreFeed,
+      stories,
+      storiesLoading,
+      refreshStories,
+      loadStoryItems,
       threads,
       threadsLoading,
       refreshInbox,
@@ -477,7 +539,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       mode, me, space, feedChannel, feed, feedLoading, feedLoadingMore,
-      refreshFeed, loadMoreFeed, threads,
+      refreshFeed, loadMoreFeed, stories, storiesLoading, refreshStories,
+      loadStoryItems, threads,
       threadsLoading, refreshInbox,
       activeThreadId, activeThread, threadLoading, olderLoading, openThread,
       loadOlderMessages, sendMessage,

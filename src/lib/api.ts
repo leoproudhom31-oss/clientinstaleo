@@ -2,7 +2,7 @@
 // La session Instagram vit dans un cookie httpOnly chiffre cote serveur :
 // on envoie donc credentials: 'include' a chaque appel.
 
-import type { Message, Post, ThreadPreview, Thread, User } from '../types'
+import type { Message, Post, StoryItem, StoryTray, ThreadPreview, Thread, User } from '../types'
 
 export class ApiError extends Error {
   code?: string
@@ -108,6 +108,14 @@ export const api = {
 
   inbox(): Promise<{ threads: ThreadPreview[] }> {
     return call<{ threads: ThreadPreview[] }>('inbox')
+  },
+
+  stories(): Promise<{ trays: StoryTray[] }> {
+    return call<{ trays: StoryTray[] }>('stories')
+  },
+
+  storyReel(reel: string): Promise<{ items: StoryItem[] }> {
+    return call<{ items: StoryItem[] }>(`stories?reel=${encodeURIComponent(reel)}`)
   },
 
   thread(id: string, cursor?: string): Promise<{ thread: Thread }> {

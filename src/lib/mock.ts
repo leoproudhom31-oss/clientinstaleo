@@ -1,7 +1,14 @@
 // Donnees de demonstration — 100% locales, aucune connexion requise.
 // Permet de voir l'interface immediatement (et sur Vercel sans identifiants).
 
-import type { Message, Post, Thread, ThreadPreview, User } from '../types'
+import type {
+  Message,
+  Post,
+  StoryTray,
+  Thread,
+  ThreadPreview,
+  User,
+} from '../types'
 import { generateAvatar } from './avatars'
 
 function mkUser(
@@ -163,6 +170,33 @@ export function demoThreadPreviews(): ThreadPreview[] {
 
 export function demoThreadById(id: string): Thread | undefined {
   return demoThreads.find((t) => t.id === id)
+}
+
+// Stories de demonstration : on reutilise les avatars generes comme visuels
+// (aucune ressource externe). Chaque compte a 1 a 3 "photos".
+export function demoStories(): StoryTray[] {
+  const trays: Array<{ user: User; seen: boolean; count: number }> = [
+    { user: alice, seen: false, count: 3 },
+    { user: studio, seen: false, count: 2 },
+    { user: maxime, seen: false, count: 1 },
+    { user: nina, seen: true, count: 2 },
+    { user: chef, seen: true, count: 1 },
+  ]
+  return trays.map(({ user, seen, count }) => ({
+    id: user.pk,
+    user,
+    seen,
+    mediaCount: count,
+    takenAt: now - 60 * 30,
+    items: Array.from({ length: count }, (_, i) => ({
+      id: `${user.pk}-story-${i}`,
+      takenAt: now - 60 * 30 - i * 120,
+      isVideo: false,
+      imageUrl: user.avatarUrl,
+      videoUrl: null,
+      duration: null,
+    })),
+  }))
 }
 
 // Membres "en ligne / hors ligne" pour la colonne de droite (feed).

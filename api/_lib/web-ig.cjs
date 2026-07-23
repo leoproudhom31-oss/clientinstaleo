@@ -312,6 +312,39 @@ async function feed(session, { maxId } = {}) {
   }
 }
 
+// Carrousel des stories (comptes suivis ayant des stories actives). Endpoint de
+// LECTURE : GET reels_tray. Chaque entree contient l'utilisateur et, souvent,
+// deja ses items ; sinon on les recharge a la demande via storyReel().
+async function stories(session) {
+  const data = await webRequest(session, '/api/v1/feed/reels_tray/')
+  const tray = data.tray || []
+  const mapped = tray
+    .map(map.mapStoryTray)
+    .filter((t) => t.user && t.user.pk)
+    // Tri : non vues d'abord, puis les plus recentes.
+    .sort((a, b) => Number(a.seen) - Number(b.seen) || b.takenAt - a.takenAt)
+  const withItems = mapped.filter((t) => t.items.length).length
+  console.log(
+    `[web-ig] stories() : ${tray.length} entrees -> ${mapped.length} comptes (${withItems} avec items deja charges)`,
+  )
+  return mapped
+}
+
+// Recupere les items (photos/videos) d'une story precise. reelId = pk du compte.
+async function storyReel(session, reelId) {
+  const id = String(reelId)
+  const data = await webRequest(
+    session,
+    `/api/v1/feed/reels_media/?reel_ids=${encodeURIComponent(id)}`,
+  )
+  const reel =
+    data.reels?.[id] ||
+    (Array.isArray(data.reels_media) ? data.reels_media.find((r) => String(r.id) === id) : null)
+  const items = reel?.items || []
+  console.log(`[web-ig] storyReel(${id}) : ${items.length} elements`)
+  return items.map(map.mapStoryItem)
+}
+
 async function inbox(session) {
   const data = await webRequest(
     session,
@@ -429,4 +462,4 @@ async function send(session, threadId, text) {
   }
 }
 
-module.exports = { me, meRaw, feed, inbox, thread, send, userFeed }
+module.exports = { me, meRaw, feed, inbox, thread, send, userFeed, stories, storyReel }
