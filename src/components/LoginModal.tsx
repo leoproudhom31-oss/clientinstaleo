@@ -77,12 +77,15 @@ export function LoginModal() {
         setError("La connexion Instagram n'a pas abouti. Reessaie.")
         return
       }
-      const { user } = await api.me()
-      onLoggedIn(user)
+      // La session est capturee : on entre dans l'app meme si le profil tarde.
+      try {
+        const { user } = await api.me()
+        onLoggedIn(user)
+      } catch {
+        onLoggedIn({ pk: '', username: 'mon compte', fullName: '', avatarUrl: null })
+      }
     } catch {
-      setError(
-        'Connexion etablie mais impossible de charger ton profil. Reessaie dans un instant.',
-      )
+      setError('Un souci est survenu. Reessaie dans un instant.')
     } finally {
       setBrowserLoading(false)
     }
