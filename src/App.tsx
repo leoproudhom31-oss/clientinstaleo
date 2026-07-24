@@ -15,12 +15,16 @@ import { FeedView } from './components/FeedView'
 import { StoriesView } from './components/StoriesView'
 import { ReelsView } from './components/ReelsView'
 import { SavedView } from './components/SavedView'
+import { ExploreView } from './components/ExploreView'
+import { NotificationsView } from './components/NotificationsView'
 import { DMView } from './components/DMView'
 import { ProfileView } from './components/ProfileView'
-import { EmptyState } from './components/EmptyState'
 import { MainHeader } from './components/MainHeader'
 import { LoginModal } from './components/LoginModal'
 import { SettingsModal } from './components/SettingsModal'
+import { UserProfileModal } from './components/UserProfileModal'
+import { PostDetailModal } from './components/PostDetailModal'
+import { ShareToDMModal } from './components/ShareToDMModal'
 
 const FEED_LABELS: Record<string, string> = {
   accueil: 'accueil',
@@ -101,21 +105,8 @@ function Workspace() {
           !['stories', 'reels', 'saved'].includes(feedChannel) && <FeedView />}
         {space === 'direct' && <DMView />}
         {space === 'profile' && <ProfileView />}
-        {space === 'explore' && (
-          <div className="content">
-            <EmptyState icon={<Compass size={40} />} title="Explorer">
-              La decouverte de nouveaux comptes arrivera dans une prochaine
-              version. Le fil et les messages sont deja fonctionnels.
-            </EmptyState>
-          </div>
-        )}
-        {space === 'notifications' && (
-          <div className="content">
-            <EmptyState icon={<Bell size={40} />} title="Notifications">
-              Tes j'aime, commentaires et abonnements s'afficheront ici.
-            </EmptyState>
-          </div>
-        )}
+        {space === 'explore' && <ExploreView />}
+        {space === 'notifications' && <NotificationsView />}
         {showMembers && <MemberList />}
       </div>
     </div>
@@ -130,6 +121,9 @@ function Shell() {
       <Workspace />
       <LoginModal />
       <SettingsModal />
+      <UserProfileModal />
+      <PostDetailModal />
+      <ShareToDMModal />
     </div>
   )
 }

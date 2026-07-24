@@ -15,6 +15,7 @@
 // Node. electron/main.cjs enregistre ici la fonction d'envoi ; web-ig.cjs
 // l'utilise en priorite pour les envois, avec repli sur la requete serveur.
 let sender = null
+let fetcher = null
 
 module.exports = {
   // Appele par le process principal Electron une fois la fenetre worker prete.
@@ -30,5 +31,18 @@ module.exports = {
   async send(threadId, text, writeHeaders) {
     if (!sender) throw new Error('page bridge indisponible')
     return sender(threadId, text, writeHeaders || {})
+  },
+
+  // Lecture GET executee DANS la page (pour les endpoints qu'Instagram refuse
+  // a une requete Node mais accepte depuis son propre contexte, ex : news/inbox).
+  setFetcher(fn) {
+    fetcher = typeof fn === 'function' ? fn : null
+  },
+  hasFetcher() {
+    return typeof fetcher === 'function'
+  },
+  async get(path) {
+    if (!fetcher) throw new Error('page bridge (get) indisponible')
+    return fetcher(path)
   },
 }

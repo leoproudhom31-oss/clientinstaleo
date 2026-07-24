@@ -205,6 +205,34 @@ async function igPageSend(threadId, text) {
   }
 }
 
+// Execute une LECTURE (GET JSON) dans le contexte de la page Instagram. Utile
+// pour les endpoints qu'Instagram refuse a une requete Node (500) mais sert
+// normalement depuis sa propre page (ex : news/inbox). L'URL cible « home » est
+// un prefixe de toutes les pages du domaine : on ne perturbe donc pas une page
+// de conversation eventuellement deja ouverte pour l'envoi.
+async function igPageGet(path) {
+  const win = await getIgWorker('https://www.instagram.com/')
+  const js = `(async () => {
+    try {
+      const r = await fetch(${JSON.stringify(path)}, {
+        headers: { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest', 'accept': 'application/json' },
+        credentials: 'include',
+      });
+      const raw = await r.text();
+      let data = null; try { data = JSON.parse(raw); } catch (e) {}
+      return { ok: r.ok, status: r.status, data };
+    } catch (e) { return { error: String(e && e.message || e) }; }
+  })()`
+  try {
+    const res = await win.webContents.executeJavaScript(js)
+    console.log(`[ig-get] ${path} -> status=${res?.status} ok=${res?.ok}${res?.error ? ' error=' + res.error : ''}`)
+    return res
+  } catch (e) {
+    console.warn('[ig-get] executeJavaScript a echoue :', e?.message || e)
+    return { error: String(e?.message || e) }
+  }
+}
+
 function destroyIgWorker() {
   if (igWorker && !igWorker.isDestroyed()) {
     igWorker.destroy()
@@ -446,6 +474,8 @@ app.whenReady().then(() => {
   setupIgHeaderCapture()
   // Les envois de message passeront par la page reelle (voir page-bridge.cjs).
   pageBridge.setSender(igPageSend)
+  // Certaines lectures refusees a Node (news/inbox) passent depuis la page.
+  pageBridge.setFetcher(igPageGet)
   createWindow()
 })
 

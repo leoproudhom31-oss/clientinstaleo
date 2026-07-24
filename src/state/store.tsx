@@ -10,6 +10,7 @@ import {
 } from 'react'
 import type {
   Message,
+  Notification,
   Post,
   Reel,
   SpaceId,
@@ -63,6 +64,15 @@ interface Store {
   savedLoadingMore: boolean
   loadMoreSaved: () => void
 
+  explore: Post[]
+  exploreLoading: boolean
+  exploreLoadingMore: boolean
+  loadMoreExplore: () => void
+
+  notifications: Notification[]
+  notificationsLoading: boolean
+  refreshNotifications: () => void
+
   threads: ThreadPreview[]
   threadsLoading: boolean
   refreshInbox: () => void
@@ -85,9 +95,60 @@ interface Store {
   settingsOpen: boolean
   setSettingsOpen: (v: boolean) => void
 
+  // Fiche profil (popout facon Discord) : compte actuellement affiche.
+  profileUser: User | null
+  openUserProfile: (user: User) => void
+  closeUserProfile: () => void
+
+  // Detail d'une publication (image, j'aime, commentaires).
+  postId: string | null
+  openPost: (id: string) => void
+  closePost: () => void
+
+  // Partage d'une publication/reel vers une conversation (DM).
+  sharePost: Post | null
+  openShare: (post: Post) => void
+  closeShare: () => void
+
   onLoggedIn: (user: User) => void
   logout: () => void
   switchToDemo: () => void
+}
+
+// Fusionne la page la plus recente d'une conversation (obtenue par polling)
+// dans le thread affiche : ajoute les messages recus depuis, et "reconcilie"
+// nos propres messages optimistes (local-/page_) avec leur version serveur pour
+// eviter les doublons.
+function mergeNewest(t: Thread, newest: Message[], mePk: string): Thread {
+  const existing = new Set(t.messages.map((m) => m.id))
+  let messages = t.messages
+  const toAppend: Message[] = []
+  let reconciled = false
+  for (const nm of newest) {
+    if (existing.has(nm.id)) continue
+    if (String(nm.senderId) === String(mePk)) {
+      const idx = messages.findIndex(
+        (m) =>
+          (m.id.startsWith('local-') || m.id.startsWith('page_')) &&
+          String(m.senderId) === String(mePk) &&
+          (m.text || '') === (nm.text || ''),
+      )
+      if (idx !== -1) {
+        messages = messages.map((m, i) => (i === idx ? { ...nm } : m))
+        reconciled = true
+        continue
+      }
+    }
+    toAppend.push(nm)
+  }
+  if (!toAppend.length && !reconciled) return t
+  return {
+    ...t,
+    messages: [...messages, ...toAppend],
+    lastActivity: toAppend.length
+      ? toAppend[toAppend.length - 1].timestamp
+      : t.lastActivity,
+  }
 }
 
 const StoreContext = createContext<Store | null>(null)
@@ -126,6 +187,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [savedHasMore, setSavedHasMore] = useState(false)
   const [savedMaxId, setSavedMaxId] = useState<string | null>(null)
 
+  const [explore, setExplore] = useState<Post[]>([])
+  const [exploreLoading, setExploreLoading] = useState(false)
+  const [exploreLoadingMore, setExploreLoadingMore] = useState(false)
+  const [exploreHasMore, setExploreHasMore] = useState(false)
+  const [exploreMaxId, setExploreMaxId] = useState<string | null>(null)
+
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
+
   const [threads, setThreads] = useState<ThreadPreview[]>([])
   const [threadsLoading, setThreadsLoading] = useState(false)
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
@@ -138,13 +208,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [membersVisible, setMembersVisible] = useState(true)
   const [loginOpen, setLoginOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [profileUser, setProfileUser] = useState<User | null>(null)
+  const [postId, setPostId] = useState<string | null>(null)
+  const [sharePost, setSharePost] = useState<Post | null>(null)
 
   const toggleMembers = useCallback(() => setMembersVisible((v) => !v), [])
+  const openUserProfile = useCallback((user: User) => setProfileUser(user), [])
+  const closeUserProfile = useCallback(() => setProfileUser(null), [])
+  const openPost = useCallback((id: string) => setPostId(id), [])
+  const closePost = useCallback(() => setPostId(null), [])
+  const openShare = useCallback((post: Post) => setSharePost(post), [])
+  const closeShare = useCallback(() => setSharePost(null), [])
 
   // Evite les courses : on ignore les reponses tardives d'un thread abandonne.
   const threadReq = useRef(0)
   const modeRef = useRef(mode)
   modeRef.current = mode
+  // Reference stable vers le compte connecte : evite de recreer le timer de
+  // polling (et donc d'empiler des intervalles) a chaque changement de `me`.
+  const meRef = useRef(me)
+  meRef.current = me
 
   // Buffer d'"avance" pour l'historique des DM : une page plus ancienne est
   // recuperee EN ARRIERE-PLAN des que possible (a l'ouverture du thread, puis
@@ -318,6 +401,74 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSavedLoadingMore(false)
     }
   }, [savedHasMore, savedMaxId, savedLoadingMore])
+
+  const loadExplore = useCallback(async (m: Mode) => {
+    setExploreLoading(true)
+    setError(null)
+    setErrorCode(undefined)
+    try {
+      if (m === 'demo') {
+        setExplore(demoFeed)
+        setExploreHasMore(false)
+        setExploreMaxId(null)
+      } else {
+        const { posts, hasMore, nextMaxId } = await api.explore()
+        setExplore(posts)
+        setExploreHasMore(hasMore)
+        setExploreMaxId(nextMaxId)
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Erreur lors du chargement de l'explorateur.")
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
+      setExplore([])
+      setExploreHasMore(false)
+      setExploreMaxId(null)
+    } finally {
+      setExploreLoading(false)
+    }
+  }, [])
+
+  const loadMoreExplore = useCallback(async () => {
+    if (modeRef.current !== 'live' || !exploreHasMore || !exploreMaxId || exploreLoadingMore) return
+    setExploreLoadingMore(true)
+    try {
+      const { posts, hasMore, nextMaxId } = await api.explore(exploreMaxId)
+      setExplore((prev) => {
+        const seen = new Set(prev.map((p) => p.id))
+        return [...prev, ...posts.filter((p) => !seen.has(p.id))]
+      })
+      setExploreHasMore(hasMore)
+      setExploreMaxId(nextMaxId)
+    } catch {
+      /* on garde ce qui est deja affiche */
+    } finally {
+      setExploreLoadingMore(false)
+    }
+  }, [exploreHasMore, exploreMaxId, exploreLoadingMore])
+
+  const loadNotifications = useCallback(async (m: Mode) => {
+    setNotificationsLoading(true)
+    setError(null)
+    setErrorCode(undefined)
+    try {
+      if (m === 'demo') {
+        setNotifications([])
+      } else {
+        const { notifications: n } = await api.notifications()
+        setNotifications(n)
+      }
+    } catch (e) {
+      // news/inbox renvoie parfois 500 pour une session web : message clair
+      // plutot qu'un "Erreur Instagram (500)" brut.
+      setError(
+        "Instagram n'a pas renvoye ton fil d'activite (il limite parfois cette API). Reessaie dans un instant.",
+      )
+      setErrorCode(e instanceof ApiError ? e.code : undefined)
+      setNotifications([])
+    } finally {
+      setNotificationsLoading(false)
+    }
+  }, [])
 
   const prefetchMoreFeed = useCallback((maxId: string) => {
     if (feedFetchRef.current) return feedFetchRef.current
@@ -556,6 +707,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [activeThread, me.pk],
   )
 
+  // Rafraichissement en direct de la conversation ouverte : on interroge
+  // periodiquement la page la plus recente et on fusionne les nouveaux messages.
+  // Sans ca, on n'a jamais les messages recus tant qu'on ne rouvre pas le thread.
+  // Garde-fous : une seule requete a la fois (pas d'empilement), et pause quand
+  // la fenetre est en arriere-plan (economie de requetes).
+  useEffect(() => {
+    // Uniquement quand on REGARDE la conversation : inutile de solliciter
+    // Instagram en boucle quand on est sur le fil, l'explorateur, etc.
+    if (mode !== 'live' || space !== 'direct' || !activeThreadId) return
+    let stopped = false
+    let inFlight = false
+    const poll = async () => {
+      if (inFlight || document.hidden) return
+      inFlight = true
+      try {
+        const { thread: fresh } = await api.thread(activeThreadId)
+        if (stopped) return
+        setActiveThread((t) =>
+          t && t.id === activeThreadId ? mergeNewest(t, fresh.messages, meRef.current.pk) : t,
+        )
+        setThreads((prev) =>
+          prev.map((p) =>
+            p.id === activeThreadId && p.lastActivity !== fresh.lastActivity
+              ? { ...p, lastMessage: fresh.lastMessage, lastActivity: fresh.lastActivity, unread: false }
+              : p,
+          ),
+        )
+      } catch {
+        /* transitoire : on reessaiera au prochain tick */
+      } finally {
+        inFlight = false
+      }
+    }
+    const id = window.setInterval(poll, 6000)
+    return () => {
+      stopped = true
+      window.clearInterval(id)
+    }
+  }, [mode, space, activeThreadId])
+
   // Charge les donnees quand on change d'espace (ou de canal du fil).
   useEffect(() => {
     if (space === 'feed') {
@@ -565,11 +756,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       else loadFeed(mode)
     }
     if (space === 'direct') loadInbox(mode)
-  }, [space, feedChannel, mode, loadFeed, loadInbox, loadStories, loadReels, loadSaved])
+    if (space === 'explore') loadExplore(mode)
+    if (space === 'notifications') loadNotifications(mode)
+  }, [
+    space, feedChannel, mode, loadFeed, loadInbox, loadStories, loadReels,
+    loadSaved, loadExplore, loadNotifications,
+  ])
 
   const refreshFeed = useCallback(() => loadFeed(modeRef.current), [loadFeed])
   const refreshInbox = useCallback(() => loadInbox(modeRef.current), [loadInbox])
   const refreshStories = useCallback(() => loadStories(modeRef.current), [loadStories])
+  const refreshNotifications = useCallback(
+    () => loadNotifications(modeRef.current),
+    [loadNotifications],
+  )
 
   // Au demarrage : detecte une session "live" existante (cookie), sinon demo.
   useEffect(() => {
@@ -638,6 +838,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       savedLoading,
       savedLoadingMore,
       loadMoreSaved,
+      explore,
+      exploreLoading,
+      exploreLoadingMore,
+      loadMoreExplore,
+      notifications,
+      notificationsLoading,
+      refreshNotifications,
       threads,
       threadsLoading,
       refreshInbox,
@@ -656,6 +863,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setLoginOpen,
       settingsOpen,
       setSettingsOpen,
+      profileUser,
+      openUserProfile,
+      closeUserProfile,
+      postId,
+      openPost,
+      closePost,
+      sharePost,
+      openShare,
+      closeShare,
       onLoggedIn,
       logout,
       switchToDemo,
@@ -664,11 +880,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       mode, me, space, feedChannel, feed, feedLoading, feedLoadingMore,
       refreshFeed, loadMoreFeed, stories, storiesLoading, refreshStories,
       loadStoryItems, reels, reelsLoading, reelsLoadingMore, loadMoreReels,
-      saved, savedLoading, savedLoadingMore, loadMoreSaved, threads,
+      saved, savedLoading, savedLoadingMore, loadMoreSaved,
+      explore, exploreLoading, exploreLoadingMore, loadMoreExplore,
+      notifications, notificationsLoading, refreshNotifications, threads,
       threadsLoading, refreshInbox,
       activeThreadId, activeThread, threadLoading, olderLoading, openThread,
       loadOlderMessages, sendMessage,
       error, errorCode, membersVisible, toggleMembers, loginOpen, settingsOpen,
+      profileUser, openUserProfile, closeUserProfile, postId, openPost, closePost,
+      sharePost, openShare, closeShare,
       onLoggedIn, logout, switchToDemo,
     ],
   )

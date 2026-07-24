@@ -4,8 +4,13 @@ import { demoOffline, demoOnline } from '../lib/mock'
 import type { User } from '../types'
 
 function Row({ user, offline }: { user: User; offline?: boolean }) {
+  const { openUserProfile } = useStore()
   return (
-    <div className={`member-row ${offline ? 'offline' : ''}`}>
+    <div
+      className={`member-row clickable ${offline ? 'offline' : ''}`}
+      onClick={() => openUserProfile(user)}
+      title={`Voir le profil de ${user.username}`}
+    >
       <Avatar
         user={user}
         size={32}

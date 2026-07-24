@@ -40,6 +40,7 @@ function MessageRow({
   senderOf: (id: string) => User
   grouped: boolean
 }) {
+  const { openUserProfile } = useStore()
   if (message.itemType === 'system') {
     return <div className="msg-system">{message.text}</div>
   }
@@ -61,13 +62,20 @@ function MessageRow({
             {formatShortTime(message.timestamp)}
           </span>
         ) : (
-          <Avatar user={sender} size={40} />
+          <span className="clickable" onClick={() => openUserProfile(sender)}>
+            <Avatar user={sender} size={40} />
+          </span>
         )}
       </div>
       <div className="msg-body">
         {!grouped && (
           <div className="msg-head">
-            <span className="msg-author">{sender.username}</span>
+            <span
+              className="msg-author clickable"
+              onClick={() => openUserProfile(sender)}
+            >
+              {sender.username}
+            </span>
             <span className="msg-time">{formatMessageTime(message.timestamp)}</span>
           </div>
         )}
@@ -133,6 +141,7 @@ export function DMView() {
     olderLoading,
     loadOlderMessages,
     openThread,
+    openUserProfile,
     error,
     errorCode,
     me,
@@ -271,12 +280,21 @@ export function DMView() {
                 </div>
               ) : (
                 <div style={{ padding: '32px 16px 8px' }}>
-                  <Avatar
-                    user={activeThread.users[0]}
-                    seed={activeThread.id}
-                    label={activeThread.title}
-                    size={72}
-                  />
+                  <span
+                    className={activeThread.users[0] && !activeThread.isGroup ? 'clickable' : ''}
+                    onClick={() =>
+                      activeThread.users[0] &&
+                      !activeThread.isGroup &&
+                      openUserProfile(activeThread.users[0])
+                    }
+                  >
+                    <Avatar
+                      user={activeThread.users[0]}
+                      seed={activeThread.id}
+                      label={activeThread.title}
+                      size={72}
+                    />
+                  </span>
                   <h1
                     style={{
                       color: 'var(--header-primary)',

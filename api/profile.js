@@ -7,10 +7,11 @@ const web = require('./_lib/web-ig.cjs')
 
 module.exports = async (req, res) => {
   const sess = desktop.get()
-  logRoute('profile', Boolean(sess))
+  const maxId = req.query?.maxId
+  logRoute('profile', Boolean(sess), maxId ? `maxId=${maxId}` : 'premiere page')
   if (sess) {
     try {
-      return json(res, 200, { posts: await web.userFeed(sess, sess.dsUserId) })
+      return json(res, 200, await web.userFeed(sess, sess.dsUserId, { maxId }))
     } catch (e) {
       console.warn(`[api:profile] echec (${e?.code || e?.message})`)
       return apiError(res, e)
@@ -24,7 +25,7 @@ module.exports = async (req, res) => {
     const feed = ig.feed.user(userId)
     const items = await feed.items()
     await persist(res, ig)
-    return json(res, 200, { posts: items.map(mapPost) })
+    return json(res, 200, { posts: items.map(mapPost), hasMore: false, nextMaxId: null })
   } catch (e) {
     return handleError(res, e)
   }

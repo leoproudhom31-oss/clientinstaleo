@@ -109,7 +109,7 @@ function mergeSetCookie(session, res) {
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308])
 const MAX_REDIRECTS = 6
 
-async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } = {}) {
+async function webRequest(session, pathOrUrl, { method = 'GET', form, referer, accept } = {}) {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${BASE}${pathOrUrl}`
   let body
   const buildHeaders = () => {
@@ -134,7 +134,7 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } 
       Referer: referer || `${BASE}/`,
       Origin: BASE,
       Cookie: session.cookieHeader,
-      Accept: '*/*',
+      Accept: accept || '*/*',
     }
     // Rejoue les en-tetes de securite interceptes sur la VRAIE page Instagram
     // (X-ASBD-ID, X-Instagram-AJAX, X-Web-Session-ID, X-Bloks-Version-Id...).
@@ -281,12 +281,42 @@ async function me(session) {
   return map.mapUser(await meRaw(session))
 }
 
-// Publications d'un utilisateur (par defaut, le compte connecte).
-async function userFeed(session, userId, count = 12) {
+// Publications d'un utilisateur (par defaut, le compte connecte), paginees via
+// max_id/next_max_id (comme le fil). Renvoie { posts, hasMore, nextMaxId }.
+async function userFeed(session, userId, { maxId, count = 12 } = {}) {
   const id = userId || session.dsUserId
-  const data = await webRequest(session, `/api/v1/feed/user/${id}/?count=${count}`)
+  let url = `/api/v1/feed/user/${id}/?count=${count}`
+  if (maxId) url += `&max_id=${encodeURIComponent(maxId)}`
+  const data = await webRequest(session, url)
   const items = data.items || []
-  return items.map(map.mapPost)
+  console.log(
+    `[web-ig] userFeed(${id}) : ${items.length} publications | hasMore=${Boolean(data.more_available)}`,
+  )
+  return {
+    posts: items.map(map.mapPost),
+    hasMore: Boolean(data.more_available),
+    nextMaxId: data.next_max_id || null,
+  }
+}
+
+// Profil complet d'un compte (bio, compteurs, avatar HD) via l'endpoint web
+// utilise par les pages de profil instagram.com.
+async function userInfo(session, username) {
+  const data = await webRequest(
+    session,
+    `/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
+    { referer: `${BASE}/${encodeURIComponent(username)}/` },
+  )
+  const u = data?.data?.user
+  if (!u) {
+    const e = new Error('Profil Instagram introuvable.')
+    e.code = 'not_found'
+    throw e
+  }
+  console.log(
+    `[web-ig] userInfo(${username}) : pk=${u.id} abonnes=${u.edge_followed_by?.count} publications=${u.edge_owner_to_timeline_media?.count} prive=${!!u.is_private}`,
+  )
+  return map.mapProfile(u)
 }
 
 // maxId (renvoye par Instagram sous next_max_id) permet de demander la suite
@@ -345,21 +375,24 @@ async function storyReel(session, reelId) {
   return items.map(map.mapStoryItem)
 }
 
-// Fil des reels (onglet Reels). POST clips/home, paginé via paging_info.max_id.
+// Fil des reels (onglet Reels). L'endpoint clips/home n'existe pas cote WEB
+// (404) ; en revanche le fil timeline contient DEJA des reels (suggestions
+// clips). On reutilise donc cet endpoint EPROUVE et on n'en garde que les
+// videos/clips — pagination identique au fil (next_max_id).
 async function reels(session, { maxId } = {}) {
-  const form = { container_module: 'clips_viewer_clips_tab' }
-  if (maxId) form.max_id = maxId
-  const data = await webRequest(session, '/api/v1/clips/home/', { method: 'POST', form })
-  const items = data.items || data.reels_media || data.clips || []
-  const list = items.map(map.mapReel).filter(Boolean)
-  const paging = data.paging_info || {}
+  const form = maxId
+    ? { reason: 'pagination', max_id: maxId, is_pull_to_refresh: '0' }
+    : { reason: 'cold_start_fetch', is_pull_to_refresh: '0' }
+  const data = await webRequest(session, '/api/v1/feed/timeline/', { method: 'POST', form })
+  const items = data.feed_items || data.items || []
+  const list = items.map(map.extractClip).filter(Boolean).map(map.mapReel).filter(Boolean)
   console.log(
-    `[web-ig] reels() : ${items.length} elements bruts -> ${list.length} reels | hasMore=${Boolean(paging.more_available)}`,
+    `[web-ig] reels() : ${items.length} elements bruts -> ${list.length} reels | hasMore=${Boolean(data.more_available)}`,
   )
   return {
     reels: list,
-    hasMore: Boolean(paging.more_available),
-    nextMaxId: paging.max_id || null,
+    hasMore: Boolean(data.more_available),
+    nextMaxId: data.next_max_id || null,
   }
 }
 
@@ -381,6 +414,134 @@ async function saved(session, { maxId } = {}) {
     hasMore: Boolean(data.more_available),
     nextMaxId: data.next_max_id || null,
   }
+}
+
+// Collecte recursivement les objets "media" dans une reponse (utilise pour
+// l'explore, dont la structure sectionnee est imbriquee et variable).
+function collectMedia(node, out, seen, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > 7) return
+  if (Array.isArray(node)) {
+    for (const x of node) collectMedia(x, out, seen, depth + 1)
+    return
+  }
+  // Un media a un identifiant, un auteur et des versions d'image.
+  if (node.image_versions2 && node.user && (node.pk || node.id)) {
+    const id = String(node.id || node.pk)
+    if (!seen.has(id)) {
+      seen.add(id)
+      out.push(node)
+    }
+    return
+  }
+  for (const k of Object.keys(node)) collectMedia(node[k], out, seen, depth + 1)
+}
+
+// Grille "Explorer" (decouverte). L'API renvoie des sections imbriquees ; on
+// en extrait tous les medias.
+async function explore(session, { maxId } = {}) {
+  let url =
+    '/api/v1/discover/web/explore_grid/?is_prefetch=false&omit_cover_media=true' +
+    '&use_sectional_payload=true&timezone_offset=0&include_fixed_destinations=false'
+  if (maxId) url += `&max_id=${encodeURIComponent(maxId)}`
+  const data = await webRequest(session, url)
+  const medias = []
+  collectMedia(data.sectional_items || data.items || data, medias, new Set())
+  const posts = medias.map(map.mapPost)
+  console.log(
+    `[web-ig] explore() : ${medias.length} medias -> ${posts.length} publications | hasMore=${Boolean(data.more_available)}`,
+  )
+  return {
+    posts,
+    hasMore: Boolean(data.more_available),
+    nextMaxId: data.next_max_id || data.max_id || null,
+  }
+}
+
+function mapNotifs(data) {
+  const stories = [...(data?.new_stories || []), ...(data?.old_stories || [])]
+  return stories
+    .map(map.mapNotification)
+    .filter((n) => n.text)
+    .sort((a, b) => b.timestamp - a.timestamp)
+}
+
+// Fil d'activite (j'aime, commentaires, abonnements) via news/inbox. Cet
+// endpoint renvoie souvent 500 a une requete Node pour une session WEB ; on
+// retente alors DANS la page Instagram (comme pour l'envoi de messages), ou il
+// est normalement servi.
+async function notifications(session) {
+  const path = '/api/v1/news/inbox/?mark_as_seen=false'
+  try {
+    const data = await webRequest(session, path)
+    const list = mapNotifs(data)
+    console.log(`[web-ig] notifications() : ${list.length} affichees (voie serveur)`)
+    return list
+  } catch (e) {
+    if (pageBridge.hasFetcher()) {
+      console.log('[web-ig] notifications() : voie serveur en echec, repli via la page Instagram')
+      const res = await pageBridge.get(path)
+      if (res?.data) {
+        const list = mapNotifs(res.data)
+        console.log(`[web-ig] notifications() : ${list.length} affichees (voie page)`)
+        return list
+      }
+    }
+    throw e
+  }
+}
+
+// Detail complet d'une publication (media/info). L'objet media embarque deja
+// quelques commentaires (comments / preview_comments) : on les renvoie comme
+// base fiable, car l'endpoint /comments/ dedie repond parfois en HTML.
+async function postInfo(session, mediaId) {
+  const data = await webRequest(session, `/api/v1/media/${encodeURIComponent(mediaId)}/info/`)
+  const item = (data.items || [])[0]
+  if (!item) {
+    const e = new Error('Publication introuvable.')
+    e.code = 'not_found'
+    throw e
+  }
+  const raw = item.comments || item.preview_comments || []
+  return { post: map.mapPost(item), comments: raw.map(map.mapComment) }
+}
+
+// Comptes ayant aime une publication.
+async function likers(session, mediaId) {
+  const data = await webRequest(session, `/api/v1/media/${encodeURIComponent(mediaId)}/likers/`)
+  const users = (data.users || []).map(map.mapUser)
+  console.log(`[web-ig] likers(${mediaId}) : ${users.length} comptes`)
+  return users
+}
+
+// Commentaires d'une publication (page la plus pertinente). L'endpoint repond
+// parfois en HTML au lieu de JSON pour une session web : on force donc
+// Accept: application/json. En cas d'echec, l'appelant retombe sur les
+// commentaires embarques dans media/info.
+async function comments(session, mediaId, { minId } = {}) {
+  let url =
+    `/api/v1/media/${encodeURIComponent(mediaId)}/comments/` +
+    '?can_support_threading=true&permalink_enabled=false'
+  if (minId) url += `&min_id=${encodeURIComponent(minId)}`
+  const data = await webRequest(session, url, { accept: 'application/json' })
+  const list = (data.comments || []).map(map.mapComment)
+  console.log(`[web-ig] comments(${mediaId}) : ${list.length} commentaires`)
+  return {
+    comments: list,
+    hasMore: Boolean(data.has_more_comments),
+    nextMinId: data.next_min_id || null,
+  }
+}
+
+// Stories a la une (highlights) d'un compte.
+async function highlights(session, userId) {
+  const data = await webRequest(
+    session,
+    `/api/v1/highlights/${encodeURIComponent(userId)}/highlights_tray/`,
+  )
+  const tray = data.tray || []
+  const list = tray.map(map.mapHighlight).filter((h) => h.id)
+  console.log(`[web-ig] highlights(${userId}) : ${list.length} a la une`)
+  return list
 }
 
 async function inbox(session) {
@@ -508,8 +669,15 @@ module.exports = {
   thread,
   send,
   userFeed,
+  userInfo,
   stories,
   storyReel,
   reels,
   saved,
+  explore,
+  notifications,
+  postInfo,
+  likers,
+  comments,
+  highlights,
 }

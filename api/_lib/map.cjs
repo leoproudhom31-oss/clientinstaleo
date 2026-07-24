@@ -44,6 +44,41 @@ function extractMedia(feedItem) {
   return m
 }
 
+// Extrait le media video/reel d'un element du fil (pour l'onglet Reels), qu'il
+// soit direct (media_or_ad) ou injecte comme suggestion (explore_story). Le fil
+// timeline contient deja des reels ; on ne garde que les videos/clips.
+function extractClip(feedItem) {
+  const m =
+    feedItem?.media_or_ad ||
+    feedItem?.explore_story?.media_or_ad ||
+    feedItem?.explore_story?.media ||
+    feedItem?.media
+  if (!m || !m.user || m.taken_at == null) return null
+  const isClip =
+    m.product_type === 'clips' ||
+    m.media_type === 2 ||
+    (Array.isArray(m.video_versions) && m.video_versions.length > 0)
+  return isClip ? m : null
+}
+
+// Profil complet renvoye par web_profile_info (bio + compteurs), forme
+// GraphQL differente du reste de l'API (edge_followed_by.count, etc.).
+function mapProfile(u) {
+  if (!u) return null
+  return {
+    pk: String(u.id ?? u.pk ?? u.pk_id ?? ''),
+    username: u.username ?? '',
+    fullName: u.full_name ?? '',
+    avatarUrl: imgProxy(u.profile_pic_url_hd || u.profile_pic_url),
+    isVerified: !!u.is_verified,
+    isPrivate: !!u.is_private,
+    biography: u.biography ?? '',
+    followerCount: Number(u.edge_followed_by?.count ?? u.follower_count ?? 0),
+    followingCount: Number(u.edge_follow?.count ?? u.following_count ?? 0),
+    postCount: Number(u.edge_owner_to_timeline_media?.count ?? u.media_count ?? 0),
+  }
+}
+
 function mapPost(item) {
   return {
     id: String(item.id ?? item.pk ?? item.code ?? Math.random()),
@@ -263,6 +298,46 @@ function mapStoryTray(tray) {
   }
 }
 
+// Un commentaire sous une publication.
+function mapComment(c) {
+  return {
+    id: String(c.pk ?? c.id ?? Math.random()),
+    user: mapUser(c.user),
+    text: c.text ?? '',
+    createdAt: Number(c.created_at ?? c.created_at_utc) || 0,
+    likeCount: Number(c.comment_like_count) || 0,
+  }
+}
+
+// Une story a la une (highlight) : couverture + titre.
+function mapHighlight(node) {
+  const cover =
+    node.cover_media?.cropped_image_version?.url ||
+    node.cover_media?.image_versions2?.candidates?.[0]?.url ||
+    firstImage(node.cover_media)
+  return {
+    // ex: "highlight:1780..." — a repasser tel quel a reels_media.
+    id: String(node.id ?? ''),
+    title: node.title ?? 'A la une',
+    cover: imgProxy(cover),
+  }
+}
+
+// Une entree du fil d'activite (news/inbox) : j'aime, commentaire, abonnement.
+// Instagram fournit le texte deja localise dans args.text.
+function mapNotification(story) {
+  const a = story.args || story || {}
+  const media = Array.isArray(a.media) ? a.media[0] : null
+  return {
+    id: String(story.pk ?? a.tuuid ?? a.timestamp ?? Math.random()),
+    text: a.text || '',
+    timestamp: Number(a.timestamp) || 0,
+    profilePic: imgProxy(a.profile_image),
+    thumbnail: media ? imgProxy(media.image) : null,
+    profileId: String(a.profile_id ?? ''),
+  }
+}
+
 function mapThreadPreview(t, selfPk) {
   const others = (t.users || []).filter((u) => String(u.pk) !== String(selfPk))
   const last = (t.items && t.items[0]) || t.last_permanent_item
@@ -292,6 +367,11 @@ module.exports = {
   mapStoryItem,
   mapStoryTray,
   mapReel,
+  extractClip,
+  mapProfile,
+  mapNotification,
+  mapComment,
+  mapHighlight,
   tsSeconds,
   MEDIA_TYPES,
   SHARE_TYPES,
