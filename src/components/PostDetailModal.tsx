@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BadgeCheck, ExternalLink, Heart, MapPin, MessageCircle, X } from 'lucide-react'
+import { BadgeCheck, ExternalLink, Heart, MapPin, MessageCircle, Share2, X } from 'lucide-react'
 import { useStore } from '../state/store'
 import { Avatar } from './Avatar'
 import { api, ApiError } from '../lib/api'
@@ -7,7 +7,7 @@ import { formatCount, formatRelative } from '../lib/format'
 import type { Comment, Post, User } from '../types'
 
 export function PostDetailModal() {
-  const { postId, closePost, openUserProfile } = useStore()
+  const { postId, closePost, openUserProfile, openShare } = useStore()
   const [post, setPost] = useState<Post | null>(null)
   const [likers, setLikers] = useState<User[]>([])
   const [comments, setComments] = useState<Comment[]>([])
@@ -167,16 +167,21 @@ export function PostDetailModal() {
                     </span>
                   </div>
                 )}
-                {post.permalink && (
-                  <a
-                    className="btn btn-secondary pd-ig"
-                    href={post.permalink}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                  >
-                    <ExternalLink size={14} /> Voir sur Instagram
-                  </a>
-                )}
+                <div className="pd-actions">
+                  <button className="btn btn-primary pd-ig" onClick={() => openShare(post)}>
+                    <Share2 size={14} /> Partager en message
+                  </button>
+                  {post.permalink && (
+                    <a
+                      className="btn btn-secondary pd-ig"
+                      href={post.permalink}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                    >
+                      <ExternalLink size={14} /> Voir sur Instagram
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
           </div>

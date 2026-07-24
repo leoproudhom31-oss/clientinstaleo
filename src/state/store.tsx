@@ -105,6 +105,11 @@ interface Store {
   openPost: (id: string) => void
   closePost: () => void
 
+  // Partage d'une publication/reel vers une conversation (DM).
+  sharePost: Post | null
+  openShare: (post: Post) => void
+  closeShare: () => void
+
   onLoggedIn: (user: User) => void
   logout: () => void
   switchToDemo: () => void
@@ -205,12 +210,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [profileUser, setProfileUser] = useState<User | null>(null)
   const [postId, setPostId] = useState<string | null>(null)
+  const [sharePost, setSharePost] = useState<Post | null>(null)
 
   const toggleMembers = useCallback(() => setMembersVisible((v) => !v), [])
   const openUserProfile = useCallback((user: User) => setProfileUser(user), [])
   const closeUserProfile = useCallback(() => setProfileUser(null), [])
   const openPost = useCallback((id: string) => setPostId(id), [])
   const closePost = useCallback(() => setPostId(null), [])
+  const openShare = useCallback((post: Post) => setSharePost(post), [])
+  const closeShare = useCallback(() => setSharePost(null), [])
 
   // Evite les courses : on ignore les reponses tardives d'un thread abandonne.
   const threadReq = useRef(0)
@@ -705,7 +713,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Garde-fous : une seule requete a la fois (pas d'empilement), et pause quand
   // la fenetre est en arriere-plan (economie de requetes).
   useEffect(() => {
-    if (mode !== 'live' || !activeThreadId) return
+    // Uniquement quand on REGARDE la conversation : inutile de solliciter
+    // Instagram en boucle quand on est sur le fil, l'explorateur, etc.
+    if (mode !== 'live' || space !== 'direct' || !activeThreadId) return
     let stopped = false
     let inFlight = false
     const poll = async () => {
@@ -735,7 +745,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       stopped = true
       window.clearInterval(id)
     }
-  }, [mode, activeThreadId])
+  }, [mode, space, activeThreadId])
 
   // Charge les donnees quand on change d'espace (ou de canal du fil).
   useEffect(() => {
@@ -859,6 +869,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       postId,
       openPost,
       closePost,
+      sharePost,
+      openShare,
+      closeShare,
       onLoggedIn,
       logout,
       switchToDemo,
@@ -875,6 +888,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loadOlderMessages, sendMessage,
       error, errorCode, membersVisible, toggleMembers, loginOpen, settingsOpen,
       profileUser, openUserProfile, closeUserProfile, postId, openPost, closePost,
+      sharePost, openShare, closeShare,
       onLoggedIn, logout, switchToDemo,
     ],
   )

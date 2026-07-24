@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Clapperboard, ExternalLink, Heart, Play, ShieldCheck } from 'lucide-react'
+import { Clapperboard, ExternalLink, Heart, Play, Share2, ShieldCheck } from 'lucide-react'
 import { useStore } from '../state/store'
 import type { Reel } from '../types'
 import { Avatar } from './Avatar'
@@ -8,7 +8,7 @@ import { formatCount } from '../lib/format'
 import { errorHint } from '../lib/errors'
 
 function ReelCard({ reel }: { reel: Reel }) {
-  const { openUserProfile } = useStore()
+  const { openUserProfile, openShare } = useStore()
   const [playing, setPlaying] = useState(false)
 
   return (
@@ -61,6 +61,9 @@ function ReelCard({ reel }: { reel: Reel }) {
               <Play size={13} /> {formatCount(reel.viewCount)}
             </span>
           )}
+          <button className="reel-share" onClick={() => openShare(reel)} title="Partager en message">
+            <Share2 size={13} /> Partager
+          </button>
           {reel.permalink && (
             <a
               className="reel-link"

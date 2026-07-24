@@ -2029,3 +2029,139 @@ button.pe-media-link {
   width: 100%;
   text-align: left;
 }
+
+/* ------------------------------------------------- Partage en DM (forward) -- */
+.share-modal {
+  position: relative;
+  width: min(440px, 94vw);
+  max-height: 82vh;
+  background: var(--bg-floating, #232428);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+.share-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  color: var(--text-muted);
+}
+.share-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  margin: 12px 0;
+  background: var(--bg-secondary-alt, #2b2d31);
+  border-radius: 10px;
+}
+.share-preview img {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex: none;
+}
+.share-preview-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.share-preview-text strong {
+  color: var(--header-primary);
+  font-size: 14px;
+}
+.share-preview-text span {
+  color: var(--text-muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-input, #1e1f22);
+  border-radius: 8px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.share-search input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-normal, #dbdee1);
+  font-size: 14px;
+}
+.share-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.share-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 8px;
+  text-align: left;
+}
+.share-row:hover:not(:disabled) {
+  background: var(--bg-modifier-hover, rgba(255, 255, 255, 0.04));
+}
+.share-row:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+.share-row-title {
+  flex: 1;
+  color: var(--header-primary);
+  font-weight: 500;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.share-send-btn,
+.share-sent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  flex: none;
+}
+.share-send-btn {
+  color: var(--brand);
+}
+.share-sent {
+  color: var(--green);
+}
+.pd-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.reel-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 0;
+}
+.reel-share:hover {
+  color: var(--brand);
+}

@@ -23,15 +23,18 @@ module.exports = async (req, res) => {
 
     // Detail complet : on charge en parallele et on tolere l'echec des parties
     // secondaires (likers/comments peuvent etre restreints).
-    const [post, likersRes, commentsRes] = await Promise.all([
+    const [info, likersRes, commentsRes] = await Promise.all([
       web.postInfo(sess, String(id)),
       web.likers(sess, String(id)).catch(() => []),
       web.comments(sess, String(id)).catch(() => ({ comments: [], hasMore: false, nextMinId: null })),
     ])
+    // L'endpoint /comments/ dedie est plus complet quand il repond ; sinon on
+    // se rabat sur les commentaires embarques dans media/info.
+    const comments = commentsRes.comments.length ? commentsRes.comments : info.comments
     return json(res, 200, {
-      post,
+      post: info.post,
       likers: likersRes,
-      comments: commentsRes.comments,
+      comments,
       commentsHasMore: commentsRes.hasMore,
       commentsNextMinId: commentsRes.nextMinId,
     })

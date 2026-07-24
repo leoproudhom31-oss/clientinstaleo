@@ -109,7 +109,7 @@ function mergeSetCookie(session, res) {
 const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308])
 const MAX_REDIRECTS = 6
 
-async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } = {}) {
+async function webRequest(session, pathOrUrl, { method = 'GET', form, referer, accept } = {}) {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${BASE}${pathOrUrl}`
   let body
   const buildHeaders = () => {
@@ -134,7 +134,7 @@ async function webRequest(session, pathOrUrl, { method = 'GET', form, referer } 
       Referer: referer || `${BASE}/`,
       Origin: BASE,
       Cookie: session.cookieHeader,
-      Accept: '*/*',
+      Accept: accept || '*/*',
     }
     // Rejoue les en-tetes de securite interceptes sur la VRAIE page Instagram
     // (X-ASBD-ID, X-Instagram-AJAX, X-Web-Session-ID, X-Bloks-Version-Id...).
@@ -457,19 +457,42 @@ async function explore(session, { maxId } = {}) {
   }
 }
 
-// Fil d'activite (j'aime, commentaires, abonnements) via news/inbox.
-async function notifications(session) {
-  const data = await webRequest(session, '/api/v1/news/inbox/?mark_as_seen=false')
-  const stories = [...(data.new_stories || []), ...(data.old_stories || [])]
-  const list = stories
+function mapNotifs(data) {
+  const stories = [...(data?.new_stories || []), ...(data?.old_stories || [])]
+  return stories
     .map(map.mapNotification)
     .filter((n) => n.text)
     .sort((a, b) => b.timestamp - a.timestamp)
-  console.log(`[web-ig] notifications() : ${stories.length} entrees -> ${list.length} affichees`)
-  return list
 }
 
-// Detail complet d'une publication (media/info).
+// Fil d'activite (j'aime, commentaires, abonnements) via news/inbox. Cet
+// endpoint renvoie souvent 500 a une requete Node pour une session WEB ; on
+// retente alors DANS la page Instagram (comme pour l'envoi de messages), ou il
+// est normalement servi.
+async function notifications(session) {
+  const path = '/api/v1/news/inbox/?mark_as_seen=false'
+  try {
+    const data = await webRequest(session, path)
+    const list = mapNotifs(data)
+    console.log(`[web-ig] notifications() : ${list.length} affichees (voie serveur)`)
+    return list
+  } catch (e) {
+    if (pageBridge.hasFetcher()) {
+      console.log('[web-ig] notifications() : voie serveur en echec, repli via la page Instagram')
+      const res = await pageBridge.get(path)
+      if (res?.data) {
+        const list = mapNotifs(res.data)
+        console.log(`[web-ig] notifications() : ${list.length} affichees (voie page)`)
+        return list
+      }
+    }
+    throw e
+  }
+}
+
+// Detail complet d'une publication (media/info). L'objet media embarque deja
+// quelques commentaires (comments / preview_comments) : on les renvoie comme
+// base fiable, car l'endpoint /comments/ dedie repond parfois en HTML.
 async function postInfo(session, mediaId) {
   const data = await webRequest(session, `/api/v1/media/${encodeURIComponent(mediaId)}/info/`)
   const item = (data.items || [])[0]
@@ -478,7 +501,8 @@ async function postInfo(session, mediaId) {
     e.code = 'not_found'
     throw e
   }
-  return map.mapPost(item)
+  const raw = item.comments || item.preview_comments || []
+  return { post: map.mapPost(item), comments: raw.map(map.mapComment) }
 }
 
 // Comptes ayant aime une publication.
@@ -489,13 +513,16 @@ async function likers(session, mediaId) {
   return users
 }
 
-// Commentaires d'une publication (page la plus pertinente).
+// Commentaires d'une publication (page la plus pertinente). L'endpoint repond
+// parfois en HTML au lieu de JSON pour une session web : on force donc
+// Accept: application/json. En cas d'echec, l'appelant retombe sur les
+// commentaires embarques dans media/info.
 async function comments(session, mediaId, { minId } = {}) {
   let url =
     `/api/v1/media/${encodeURIComponent(mediaId)}/comments/` +
     '?can_support_threading=true&permalink_enabled=false'
   if (minId) url += `&min_id=${encodeURIComponent(minId)}`
-  const data = await webRequest(session, url)
+  const data = await webRequest(session, url, { accept: 'application/json' })
   const list = (data.comments || []).map(map.mapComment)
   console.log(`[web-ig] comments(${mediaId}) : ${list.length} commentaires`)
   return {

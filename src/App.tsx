@@ -24,6 +24,7 @@ import { LoginModal } from './components/LoginModal'
 import { SettingsModal } from './components/SettingsModal'
 import { UserProfileModal } from './components/UserProfileModal'
 import { PostDetailModal } from './components/PostDetailModal'
+import { ShareToDMModal } from './components/ShareToDMModal'
 
 const FEED_LABELS: Record<string, string> = {
   accueil: 'accueil',
@@ -122,6 +123,7 @@ function Shell() {
       <SettingsModal />
       <UserProfileModal />
       <PostDetailModal />
+      <ShareToDMModal />
     </div>
   )
 }
