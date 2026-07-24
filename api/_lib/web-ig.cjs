@@ -532,15 +532,27 @@ async function comments(session, mediaId, { minId } = {}) {
   }
 }
 
-// Recherche de comptes (pour demarrer une nouvelle conversation).
+// Recherche de comptes (pour demarrer une nouvelle conversation). L'endpoint
+// renvoie « useragent mismatch » a une requete Node (comme news/inbox) : on
+// bascule alors sur la vraie page Instagram, ou il fonctionne.
 async function searchUsers(session, query) {
-  const data = await webRequest(
-    session,
-    `/api/v1/users/search/?q=${encodeURIComponent(query)}&count=20&context=blended`,
-  )
-  const users = (data.users || []).map(map.mapUser)
-  console.log(`[web-ig] searchUsers("${query}") : ${users.length} comptes`)
-  return users
+  const path = `/api/v1/users/search/?q=${encodeURIComponent(query)}&count=20&context=blended`
+  try {
+    const data = await webRequest(session, path)
+    const users = (data.users || []).map(map.mapUser)
+    console.log(`[web-ig] searchUsers("${query}") : ${users.length} comptes (voie serveur)`)
+    return users
+  } catch (e) {
+    if (pageBridge.hasFetcher()) {
+      const res = await pageBridge.get(path)
+      if (res?.data?.users) {
+        const users = res.data.users.map(map.mapUser)
+        console.log(`[web-ig] searchUsers("${query}") : ${users.length} comptes (voie page)`)
+        return users
+      }
+    }
+    throw e
+  }
 }
 
 // Cree (ou ouvre) une conversation avec un ou plusieurs comptes. Comme l'envoi,

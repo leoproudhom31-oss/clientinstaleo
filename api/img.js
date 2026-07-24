@@ -9,6 +9,7 @@ const ALLOWED = [
   /(^|\.)cdninstagram\.com$/i,
   /(^|\.)fbcdn\.net$/i,
   /(^|\.)instagram\.com$/i,
+  /(^|\.)giphy\.com$/i, // GIFs des messages prives
 ]
 
 module.exports = async (req, res) => {

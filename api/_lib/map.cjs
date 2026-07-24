@@ -231,9 +231,73 @@ function mapReactions(item) {
   }))
 }
 
+// Media directement envoye dans une conversation (photo, video, GIF, vocal) :
+// on renvoie une URL exploitable pour l'AFFICHER, plutot qu'une simple etiquette.
+function mapDmMedia(item) {
+  const raw = item.item_type
+  if (raw === 'media' || raw === 'raven_media') {
+    const m = item.media || item.visual_media?.media || item.visual_media
+    if (!m) return null
+    if (m.media_type === 2 && m.video_versions?.length) {
+      return { kind: 'video', url: mediaProxy(bestVideo(m)), poster: imgProxy(firstImage(m)) }
+    }
+    const img = imgProxy(firstImage(m))
+    return img ? { kind: 'image', url: img } : null
+  }
+  if (raw === 'animated_media') {
+    const imgs = item.animated_media?.images || {}
+    const g = imgs.fixed_height || imgs.fixed_width || imgs.original
+    const url = g?.url || item.animated_media?.url
+    return url ? { kind: 'gif', url: imgProxy(url) } : null
+  }
+  if (raw === 'voice_media') {
+    const audio = item.voice_media?.media?.audio
+    const src = audio?.audio_src
+    return src
+      ? { kind: 'audio', url: mediaProxy(src), duration: audio?.duration ? Math.round(audio.duration / 1000) : null }
+      : null
+  }
+  return null
+}
+
+// Apercu d'un lien partage en message (titre, resume, image).
+function mapDmLink(item) {
+  if (item.item_type !== 'link') return null
+  const l = item.link || {}
+  const ctx = l.link_context || {}
+  const fromText = typeof l.text === 'string' ? (l.text.match(/https?:\/\/\S+/) || [])[0] : ''
+  return {
+    url: ctx.link_url || fromText || '',
+    title: ctx.link_title || '',
+    summary: ctx.link_summary || '',
+    image: imgProxy(ctx.link_image_url),
+    text: l.text || '',
+  }
+}
+
+// Partage « cross-app » (xma_*) : format riche et variable. On en extrait au
+// mieux un apercu (image, titre, lien) qu'on presente comme une carte lien.
+function mapXma(item) {
+  if (!/^xma_/.test(item.item_type || '')) return null
+  const key = Object.keys(item).find((k) => k.startsWith('xma_') && Array.isArray(item[k]))
+  const x = key ? item[key][0] : null
+  if (!x) return null
+  const previewUrl =
+    x.preview_url_info?.url || x.preview_url || x.header_icon_url_info?.url || null
+  return {
+    url: x.target_url || x.action_url || '',
+    title: x.header_title_text || x.title_text || 'Contenu partage',
+    summary: x.header_subtitle_text || x.subtitle_text || '',
+    image: imgProxy(previewUrl),
+    text: '',
+  }
+}
+
 function mapMessage(item) {
   const { itemType, text, embed } = describeItem(item)
   const reactions = mapReactions(item)
+  const media = mapDmMedia(item)
+  const link = mapDmLink(item) || mapXma(item)
   return {
     id: String(item.item_id ?? item.timestamp ?? Math.random()),
     senderId: String(item.user_id ?? ''),
@@ -242,6 +306,8 @@ function mapMessage(item) {
     itemType,
     ...(embed ? { embed } : {}),
     ...(reactions ? { reactions } : {}),
+    ...(media ? { media } : {}),
+    ...(link ? { link } : {}),
   }
 }
 

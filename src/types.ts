@@ -102,6 +102,21 @@ export interface MessageReaction {
   emoji: string
 }
 
+export interface DmMedia {
+  kind: 'image' | 'video' | 'gif' | 'audio'
+  url: string | null
+  poster?: string | null
+  duration?: number | null
+}
+
+export interface DmLink {
+  url: string
+  title: string
+  summary: string
+  image: string | null
+  text: string
+}
+
 export interface Message {
   id: string
   senderId: string
@@ -115,6 +130,10 @@ export interface Message {
   embed?: Post | null
   /** Reactions emoji attachees a ce message precis. */
   reactions?: MessageReaction[]
+  /** Media reel envoye dans la conversation (photo, video, GIF, note vocale). */
+  media?: DmMedia | null
+  /** Apercu d'un lien partage (ou partage cross-app). */
+  link?: DmLink | null
 }
 
 export interface Thread extends ThreadPreview {

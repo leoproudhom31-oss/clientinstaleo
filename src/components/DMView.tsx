@@ -1,9 +1,12 @@
 import {
   AtSign,
+  ExternalLink,
   Heart,
   Image as ImageIcon,
   Info,
+  Mic,
   Phone,
+  Play,
   RefreshCw,
   Share2,
   TriangleAlert,
@@ -15,6 +18,7 @@ import { EmptyState } from './EmptyState'
 import { Avatar } from './Avatar'
 import { PostEmbedCard } from './PostEmbedCard'
 import {
+  formatDay,
   formatMessageTime,
   formatShortTime,
   shouldGroup,
@@ -27,6 +31,77 @@ const META_ICON: Record<string, typeof ImageIcon> = {
   share: Share2,
   call: Phone,
   unsupported: Info,
+}
+
+function secs(n?: number | null) {
+  if (!n) return ''
+  const m = Math.floor(n / 60)
+  const s = n % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+// Rend le contenu reel d'un message : photo, video, GIF, note vocale.
+function DmMediaBlock({ media }: { media: NonNullable<Message['media']> }) {
+  if (!media.url) return null
+  if (media.kind === 'image' || media.kind === 'gif') {
+    return (
+      <div className="dm-media-wrap">
+        <img className="dm-media" src={media.url} alt="" loading="lazy" />
+        {media.kind === 'gif' && <span className="dm-gif-badge">GIF</span>}
+      </div>
+    )
+  }
+  if (media.kind === 'video') {
+    return (
+      <div className="dm-media-wrap">
+        <video
+          className="dm-media"
+          src={media.url}
+          poster={media.poster ?? undefined}
+          controls
+          preload="none"
+          playsInline
+        />
+        <span className="dm-play-badge">
+          <Play size={12} fill="currentColor" />
+        </span>
+      </div>
+    )
+  }
+  if (media.kind === 'audio') {
+    return (
+      <div className="dm-voice">
+        <Mic size={16} />
+        <audio src={media.url} controls preload="none" />
+        {media.duration ? <span className="dm-voice-time">{secs(media.duration)}</span> : null}
+      </div>
+    )
+  }
+  return null
+}
+
+// Carte d'apercu pour un lien partage (ou un partage cross-app).
+function DmLinkCard({ link }: { link: NonNullable<Message['link']> }) {
+  const href = link.url || undefined
+  const host = (() => {
+    try {
+      return href ? new URL(href).hostname.replace(/^www\./, '') : ''
+    } catch {
+      return ''
+    }
+  })()
+  return (
+    <a className="dm-link-card" href={href} target="_blank" rel="noreferrer noopener">
+      {link.image && <img className="dm-link-img" src={link.image} alt="" loading="lazy" />}
+      <div className="dm-link-body">
+        {link.title && <span className="dm-link-title">{link.title}</span>}
+        {link.summary && <span className="dm-link-summary">{link.summary}</span>}
+        <span className="dm-link-host">
+          <ExternalLink size={11} /> {host || 'Lien'}
+        </span>
+      </div>
+    </a>
+  )
 }
 
 function MessageRow({
@@ -91,6 +166,14 @@ function MessageRow({
           <div className="msg-text">{message.text}</div>
         )}
 
+        {/* Media reel (photo, video, GIF, note vocale) affiche en clair. */}
+        {message.media && <DmMediaBlock media={message.media} />}
+
+        {/* Apercu d'un lien (ou partage cross-app). */}
+        {message.link && (message.link.image || message.link.title || message.link.url) && (
+          <DmLinkCard link={message.link} />
+        )}
+
         {message.itemType === 'share' && message.embed ? (
           <div className="msg-share-embed">
             <div className="msg-meta share compact">
@@ -100,7 +183,10 @@ function MessageRow({
             <PostEmbedCard post={message.embed} showAuthor />
           </div>
         ) : (
-          Icon && (
+          // Etiquette de repli seulement si on n'a rien de mieux a montrer.
+          Icon &&
+          !message.media &&
+          !message.link && (
             <div className={`msg-meta ${message.itemType}`}>
               <Icon size={15} />
               <span>{message.text}</span>
@@ -313,17 +399,28 @@ export function DMView() {
 
               {activeThread.messages.map((m, i) => {
                 const prev = activeThread.messages[i - 1]
-                const grouped = prev
-                  ? shouldGroup(prev.timestamp, m.timestamp, prev.senderId === m.senderId)
-                  : false
+                const newDay =
+                  !prev ||
+                  new Date(prev.timestamp * 1000).toDateString() !==
+                    new Date(m.timestamp * 1000).toDateString()
+                const grouped =
+                  !newDay && prev
+                    ? shouldGroup(prev.timestamp, m.timestamp, prev.senderId === m.senderId)
+                    : false
                 return (
-                  <MessageRow
-                    key={m.id}
-                    message={m}
-                    sender={fallbackUser(m.senderId)}
-                    senderOf={fallbackUser}
-                    grouped={grouped}
-                  />
+                  <div key={m.id}>
+                    {newDay && (
+                      <div className="dm-day-sep">
+                        <span>{formatDay(m.timestamp)}</span>
+                      </div>
+                    )}
+                    <MessageRow
+                      message={m}
+                      sender={fallbackUser(m.senderId)}
+                      senderOf={fallbackUser}
+                      grouped={grouped}
+                    />
+                  </div>
                 )
               })}
             </>

@@ -32,6 +32,17 @@ export function formatShortTime(tsSeconds: number): string {
   return heure(new Date(tsSeconds * 1000))
 }
 
+// Separateur de jour dans une conversation : "Aujourd'hui", "Hier", ou la date.
+export function formatDay(tsSeconds: number): string {
+  const d = new Date(tsSeconds * 1000)
+  const now = new Date()
+  if (d.toDateString() === now.toDateString()) return "Aujourd'hui"
+  const yest = new Date(now)
+  yest.setDate(now.getDate() - 1)
+  if (d.toDateString() === yest.toDateString()) return 'Hier'
+  return `${d.getDate()} ${MOIS[d.getMonth()]} ${d.getFullYear()}`
+}
+
 // "il y a 3 min", "il y a 2 h", "il y a 4 j"
 export function formatRelative(tsSeconds: number): string {
   const diff = Math.floor(Date.now() / 1000) - tsSeconds
