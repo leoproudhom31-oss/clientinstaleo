@@ -25,6 +25,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { UserProfileModal } from './components/UserProfileModal'
 import { PostDetailModal } from './components/PostDetailModal'
 import { ShareToDMModal } from './components/ShareToDMModal'
+import { NewConversationModal } from './components/NewConversationModal'
 
 const FEED_LABELS: Record<string, string> = {
   accueil: 'accueil',
@@ -124,6 +125,7 @@ function Shell() {
       <UserProfileModal />
       <PostDetailModal />
       <ShareToDMModal />
+      <NewConversationModal />
     </div>
   )
 }

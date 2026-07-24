@@ -532,6 +532,41 @@ async function comments(session, mediaId, { minId } = {}) {
   }
 }
 
+// Recherche de comptes (pour demarrer une nouvelle conversation).
+async function searchUsers(session, query) {
+  const data = await webRequest(
+    session,
+    `/api/v1/users/search/?q=${encodeURIComponent(query)}&count=20&context=blended`,
+  )
+  const users = (data.users || []).map(map.mapUser)
+  console.log(`[web-ig] searchUsers("${query}") : ${users.length} comptes`)
+  return users
+}
+
+// Cree (ou ouvre) une conversation avec un ou plusieurs comptes. Comme l'envoi,
+// c'est une ECRITURE : on pilote la vraie page Instagram (page-bridge). Renvoie
+// l'identifiant du thread cree.
+async function startThread(session, usernames) {
+  if (!pageBridge.hasCreator()) {
+    const e = new Error('La creation de conversation n’est disponible que dans l’app de bureau.')
+    e.code = 'no_page'
+    throw e
+  }
+  console.log(`[web-ig] startThread() : creation avec [${usernames.join(', ')}]`)
+  const res = await pageBridge.createThread(usernames)
+  if (res?.ok && res.threadId) return { threadId: String(res.threadId) }
+  if (/accounts\/login/i.test(res?.url || '')) {
+    const e = new Error('Session Instagram expiree. Deconnecte-toi puis reconnecte-toi.')
+    e.code = 'expired'
+    throw e
+  }
+  const e = new Error(
+    `Impossible de creer la conversation (etape : ${res?.stage || 'inconnue'}).`,
+  )
+  e.code = 'ig_error'
+  throw e
+}
+
 // Stories a la une (highlights) d'un compte.
 async function highlights(session, userId) {
   const data = await webRequest(
@@ -680,4 +715,6 @@ module.exports = {
   likers,
   comments,
   highlights,
+  searchUsers,
+  startThread,
 }

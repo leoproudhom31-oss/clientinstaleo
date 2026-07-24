@@ -3,7 +3,7 @@
 // - Propose une connexion via une VRAIE fenetre Instagram : la connexion a lieu
 //   sur la page officielle (aucun robot detecte), puis on reutilise la session.
 
-const { app, BrowserWindow, ipcMain, session, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, Notification, session, shell } = require('electron')
 const path = require('path')
 
 // Dossier de donnees (session chiffree) + cookies http local.
@@ -233,12 +233,97 @@ async function igPageGet(path) {
   }
 }
 
+// Cree/ouvre une conversation en pilotant l'interface « nouveau message » de la
+// vraie page Instagram (ecriture -> obligatoirement via la page, comme l'envoi).
+// Renvoie l'identifiant du thread lu dans l'URL /direct/t/<id>/.
+async function igCreateThread(usernames) {
+  const win = await getIgWorker('https://www.instagram.com/direct/new/')
+  const js = `(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const names = ${JSON.stringify(usernames)};
+    const setVal = (el, val) => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      setter.call(el, val);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    // 1) Champ de recherche des destinataires.
+    const findInput = () => document.querySelector('input[name="queryBox"], input[placeholder], input[aria-label]');
+    let input = null;
+    for (let i = 0; i < 60; i++) { input = findInput(); if (input) break; await sleep(250); }
+    if (!input) return { ok: false, stage: 'input', url: location.href };
+
+    // 2) Pour chaque destinataire : taper, attendre le resultat, le cocher.
+    for (const name of names) {
+      input.focus(); setVal(input, name); await sleep(1400);
+      let row = null;
+      for (let i = 0; i < 24; i++) {
+        const cands = Array.from(document.querySelectorAll('[role="button"], label, [role="option"], div[role="listitem"]'));
+        row = cands.find((c) => {
+          const txt = (c.textContent || '').toLowerCase();
+          return txt.includes(name.toLowerCase());
+        });
+        if (row) break;
+        await sleep(250);
+      }
+      if (!row) return { ok: false, stage: 'resultat:' + name, url: location.href };
+      row.click();
+      await sleep(700);
+      setVal(input, '');
+    }
+
+    // 3) Bouton de validation (Chat / Discussion / Suivant).
+    let btn = null;
+    for (let i = 0; i < 24; i++) {
+      const cands = Array.from(document.querySelectorAll('[role="button"], button'));
+      btn = cands.find((b) => /^(chat|discussion|discuter|suivant|next|c'est parti|envoyer)$/i.test((b.textContent || '').trim()) && b.getAttribute('aria-disabled') !== 'true');
+      if (btn) break;
+      await sleep(250);
+    }
+    if (!btn) return { ok: false, stage: 'bouton', url: location.href };
+    btn.click();
+
+    // 4) Attendre l'arrivee sur la conversation et lire son id dans l'URL.
+    for (let i = 0; i < 48; i++) {
+      await sleep(250);
+      const m = location.pathname.match(/\\/direct\\/t\\/(\\d+)/);
+      if (m) return { ok: true, threadId: m[1], url: location.href };
+    }
+    return { ok: false, stage: 'navigation', url: location.href };
+  })()`
+  try {
+    const res = await win.webContents.executeJavaScript(js)
+    console.log(`[ig-newthread] resultat : ${JSON.stringify(res).slice(0, 200)}`)
+    return res
+  } catch (e) {
+    console.warn('[ig-newthread] executeJavaScript a echoue :', e?.message || e)
+    return { ok: false, error: String(e?.message || e) }
+  }
+}
+
 function destroyIgWorker() {
   if (igWorker && !igWorker.isDestroyed()) {
     igWorker.destroy()
   }
   igWorker = null
 }
+
+// Notification native du systeme (nouveaux messages en temps reel).
+ipcMain.handle('ig-notify', (_e, { title, body } = {}) => {
+  try {
+    if (!Notification.isSupported()) return { ok: false }
+    const n = new Notification({ title: title || 'InstaLeo', body: body || '' })
+    n.on('click', () => {
+      if (mainWindow) {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.focus()
+      }
+    })
+    n.show()
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: String(e?.message || e) }
+  }
+})
 
 async function createWindow() {
   const server = await start(0) // port libre aleatoire
@@ -476,6 +561,8 @@ app.whenReady().then(() => {
   pageBridge.setSender(igPageSend)
   // Certaines lectures refusees a Node (news/inbox) passent depuis la page.
   pageBridge.setFetcher(igPageGet)
+  // Creation de conversation : pilote l'interface « nouveau message ».
+  pageBridge.setCreator(igCreateThread)
   createWindow()
 })
 

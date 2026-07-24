@@ -10,4 +10,6 @@ contextBridge.exposeInMainWorld('instaleoDesktop', {
   igLogin: () => ipcRenderer.invoke('ig-login'),
   // Efface la session capturee.
   igLogout: () => ipcRenderer.invoke('ig-logout'),
+  // Notification native (nouveaux messages).
+  notify: (title, body) => ipcRenderer.invoke('ig-notify', { title, body }),
 })

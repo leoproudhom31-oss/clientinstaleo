@@ -6,6 +6,7 @@ import {
   Hash,
   Heart,
   MessageSquare,
+  PenSquare,
   RefreshCw,
   ShieldCheck,
   TriangleAlert,
@@ -65,6 +66,7 @@ export function ChannelSidebar() {
     error,
     errorCode,
     refreshInbox,
+    setNewChatOpen,
   } = useStore()
   const meta = spaceMeta(space)
   const dm = useIncremental(threads, 12, 10)
@@ -107,7 +109,13 @@ export function ChannelSidebar() {
           <>
             <div className="channel-category">
               <span>Messages prives</span>
-              <span className="count">{threads.length}</span>
+              <button
+                className="newchat-btn"
+                onClick={() => setNewChatOpen(true)}
+                title="Nouvelle conversation"
+              >
+                <PenSquare size={15} />
+              </button>
             </div>
             {threadsLoading && (
               <div className="channel-item" style={{ cursor: 'default' }}>

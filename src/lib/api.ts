@@ -180,6 +180,22 @@ export const api = {
     return call(`highlights?userId=${encodeURIComponent(userId)}`)
   },
 
+  // Etat de lecture LOCAL des conversations (jamais transmis a Instagram).
+  readState(): Promise<{ seen: Record<string, number> }> {
+    return call('readstate')
+  },
+  markSeen(threadId: string, ts: number): Promise<{ seen: Record<string, number> }> {
+    return call('readstate', { method: 'POST', body: JSON.stringify({ threadId, ts }) })
+  },
+
+  // Recherche de comptes + creation d'une nouvelle conversation.
+  searchUsers(q: string): Promise<{ users: User[] }> {
+    return call(`search?q=${encodeURIComponent(q)}`)
+  },
+  startThread(usernames: string[]): Promise<{ threadId: string }> {
+    return call('startdm', { method: 'POST', body: JSON.stringify({ usernames }) })
+  },
+
   inbox(): Promise<{ threads: ThreadPreview[] }> {
     return call<{ threads: ThreadPreview[] }>('inbox')
   },

@@ -16,6 +16,7 @@
 // l'utilise en priorite pour les envois, avec repli sur la requete serveur.
 let sender = null
 let fetcher = null
+let creator = null
 
 module.exports = {
   // Appele par le process principal Electron une fois la fenetre worker prete.
@@ -44,5 +45,17 @@ module.exports = {
   async get(path) {
     if (!fetcher) throw new Error('page bridge (get) indisponible')
     return fetcher(path)
+  },
+
+  // Creation d'une conversation en pilotant l'interface « nouveau message ».
+  setCreator(fn) {
+    creator = typeof fn === 'function' ? fn : null
+  },
+  hasCreator() {
+    return typeof creator === 'function'
+  },
+  async createThread(usernames) {
+    if (!creator) throw new Error('page bridge (createThread) indisponible')
+    return creator(usernames)
   },
 }

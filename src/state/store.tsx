@@ -21,6 +21,7 @@ import type {
   User,
 } from '../types'
 import { api, ApiError } from '../lib/api'
+import { desktop } from '../lib/desktop'
 import {
   demoFeed,
   demoMe,
@@ -76,6 +77,8 @@ interface Store {
   threads: ThreadPreview[]
   threadsLoading: boolean
   refreshInbox: () => void
+  newChatOpen: boolean
+  setNewChatOpen: (v: boolean) => void
   activeThreadId: string | null
   activeThread: Thread | null
   threadLoading: boolean
@@ -198,6 +201,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const [threads, setThreads] = useState<ThreadPreview[]>([])
   const [threadsLoading, setThreadsLoading] = useState(false)
+  const [newChatOpen, setNewChatOpen] = useState(false)
+  // Etat de lecture LOCAL (jamais transmis a Instagram) : threadId -> ts vu.
+  const [seenMap, setSeenMap] = useState<Record<string, number>>({})
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const [activeThread, setActiveThread] = useState<Thread | null>(null)
   const [threadLoading, setThreadLoading] = useState(false)
@@ -228,6 +234,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // polling (et donc d'empiler des intervalles) a chaque changement de `me`.
   const meRef = useRef(me)
   meRef.current = me
+  // References lues par le polling d'arriere-plan de la boite de reception.
+  const seenMapRef = useRef(seenMap)
+  seenMapRef.current = seenMap
+  const activeThreadIdRef = useRef(activeThreadId)
+  activeThreadIdRef.current = activeThreadId
+
+  // Marque une conversation lue LOCALEMENT (et le persiste), sans jamais le
+  // signaler a Instagram (aucun accuse de lecture cote compte).
+  const markThreadSeen = useCallback((threadId: string, ts: number) => {
+    setSeenMap((prev) => {
+      if ((prev[threadId] || 0) >= ts) return prev
+      return { ...prev, [threadId]: ts }
+    })
+    if (modeRef.current === 'live') api.markSeen(threadId, ts).catch(() => undefined)
+  }, [])
+
+  // Une conversation est « non lue » dans NOTRE app si son dernier message est
+  // plus recent que ce qu'on a vu localement. A defaut d'info locale, on suit
+  // l'etat renvoye par Instagram (premiere fois qu'on voit la conversation).
+  const decoratedThreads = useMemo(
+    () =>
+      threads.map((t) => ({
+        ...t,
+        unread: t.lastActivity > (seenMap[t.id] ?? (t.unread ? 0 : t.lastActivity)),
+      })),
+    [threads, seenMap],
+  )
 
   // Buffer d'"avance" pour l'historique des DM : une page plus ancienne est
   // recuperee EN ARRIERE-PLAN des que possible (a l'ouverture du thread, puis
@@ -575,6 +608,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         if (reqId !== threadReq.current) return
         setActiveThread(thread ?? null)
+        // Ouvrir la conversation la marque lue LOCALEMENT (pas cote Instagram).
+        if (thread) markThreadSeen(id, thread.lastActivity)
       } catch (e) {
         if (reqId !== threadReq.current) return
         setError(e instanceof ApiError ? e.message : 'Erreur lors du chargement de la conversation.')
@@ -583,7 +618,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (reqId === threadReq.current) setThreadLoading(false)
       }
     })()
-  }, [])
+  }, [markThreadSeen])
 
   const prefetchOlder = useCallback((threadId: string, cursor: string) => {
     if (olderFetchRef.current) return olderFetchRef.current
@@ -730,10 +765,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setThreads((prev) =>
           prev.map((p) =>
             p.id === activeThreadId && p.lastActivity !== fresh.lastActivity
-              ? { ...p, lastMessage: fresh.lastMessage, lastActivity: fresh.lastActivity, unread: false }
+              ? { ...p, lastMessage: fresh.lastMessage, lastActivity: fresh.lastActivity }
               : p,
           ),
         )
+        // On regarde la conversation : on la garde lue localement.
+        markThreadSeen(activeThreadId, fresh.lastActivity)
       } catch {
         /* transitoire : on reessaiera au prochain tick */
       } finally {
@@ -745,7 +782,55 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       stopped = true
       window.clearInterval(id)
     }
-  }, [mode, space, activeThreadId])
+  }, [mode, space, activeThreadId, markThreadSeen])
+
+  // Notifications de messages EN TEMPS REEL : on interroge la boite de reception
+  // en arriere-plan (meme hors de l'onglet Messages) pour detecter les nouveaux
+  // messages, mettre a jour les pastilles, et lever une notification systeme.
+  useEffect(() => {
+    if (mode !== 'live') return
+    let stopped = false
+    let inFlight = false
+    const lastActivity = new Map<string, number>()
+    threads.forEach((t) => lastActivity.set(t.id, t.lastActivity))
+    const poll = async () => {
+      if (inFlight || document.hidden) return
+      inFlight = true
+      try {
+        const { threads: fresh } = await api.inbox()
+        if (stopped) return
+        const seen = seenMapRef.current
+        for (const t of fresh) {
+          const prev = lastActivity.get(t.id)
+          lastActivity.set(t.id, t.lastActivity)
+          const isNew = prev !== undefined && t.lastActivity > prev
+          const unread = t.lastActivity > (seen[t.id] ?? (t.unread ? 0 : t.lastActivity))
+          if (isNew && unread && t.id !== activeThreadIdRef.current) {
+            const body = t.lastMessage || 'Nouveau message'
+            if (desktop?.notify) desktop.notify(t.title, body).catch(() => undefined)
+            else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+              try {
+                new Notification(t.title, { body })
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        }
+        setThreads(fresh)
+      } catch {
+        /* transitoire */
+      } finally {
+        inFlight = false
+      }
+    }
+    const id = window.setInterval(poll, 12000)
+    return () => {
+      stopped = true
+      window.clearInterval(id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode])
 
   // Charge les donnees quand on change d'espace (ou de canal du fil).
   useEffect(() => {
@@ -788,6 +873,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
   }, [])
+
+  // Charge l'etat de lecture LOCAL une fois connecte + demande (une fois)
+  // l'autorisation de notification pour la version web (l'app de bureau utilise
+  // les notifications natives du systeme, sans permission).
+  useEffect(() => {
+    if (mode !== 'live') {
+      setSeenMap({})
+      return
+    }
+    api.readState().then(({ seen }) => setSeenMap(seen || {})).catch(() => undefined)
+    if (!desktop?.notify && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => undefined)
+    }
+  }, [mode])
 
   const onLoggedIn = useCallback((user: User) => {
     setMe(user)
@@ -845,9 +944,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notifications,
       notificationsLoading,
       refreshNotifications,
-      threads,
+      threads: decoratedThreads,
       threadsLoading,
       refreshInbox,
+      newChatOpen,
+      setNewChatOpen,
       activeThreadId,
       activeThread,
       threadLoading,
@@ -882,8 +983,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       loadStoryItems, reels, reelsLoading, reelsLoadingMore, loadMoreReels,
       saved, savedLoading, savedLoadingMore, loadMoreSaved,
       explore, exploreLoading, exploreLoadingMore, loadMoreExplore,
-      notifications, notificationsLoading, refreshNotifications, threads,
-      threadsLoading, refreshInbox,
+      notifications, notificationsLoading, refreshNotifications, decoratedThreads,
+      threadsLoading, refreshInbox, newChatOpen,
       activeThreadId, activeThread, threadLoading, olderLoading, openThread,
       loadOlderMessages, sendMessage,
       error, errorCode, membersVisible, toggleMembers, loginOpen, settingsOpen,

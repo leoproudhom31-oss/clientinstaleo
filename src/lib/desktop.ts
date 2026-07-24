@@ -5,6 +5,7 @@ export interface InstaleoDesktop {
   isDesktop: boolean
   igLogin: () => Promise<{ ok: boolean; cancelled?: boolean }>
   igLogout: () => Promise<{ ok: boolean }>
+  notify?: (title: string, body: string) => Promise<{ ok: boolean }>
 }
 
 declare global {
